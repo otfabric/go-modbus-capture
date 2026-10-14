@@ -261,8 +261,9 @@ silently deviate.
    **Calibrate the binary coding on real captures before freezing it** (see section 15).
 3. **File tooling** — implemented: `mbcsv` (long CSV both ways, wide CSV view), `edit`,
    `mbcapctl cat|merge|split|filter|trim|repair`.
-4. **Consumers (outside this repo):** `modbusctl` moves `record`, `scan`, `read`, `server static` and `server replay`
-   onto the library (see the hand-off); viewers/GUIs.
+4. **Consumers (outside this repo):** implemented in `modbusctl` 3.0.0: `client read`, `scan` and `record` write MBCAP
+   through the go-modbus PDU tap; `server static` and `server replay` serve captures with the replay core of the hand-off;
+   the `mcap` commands run on this library. Viewers and GUIs remain.
 
 ## 15. Open items
 

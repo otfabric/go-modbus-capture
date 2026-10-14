@@ -8,8 +8,10 @@ MBCAP file format and its encodings, plus `mbcapctl` for working with capture fi
 and does not replay or host them. That work lands in `otfabric/modbusctl` (and a later tool on the owner's roadmap),
 built on top of this library.
 
-This file keeps the design that was worked out for that side, so it is not lost. Move it into `modbusctl` when work
-starts there. Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
+**Implemented in `modbusctl` 3.0.0** (`internal/capfile`: recorder; `internal/replay`: replay core and clock;
+`internal/modbus/server.go`: the servers). This file is the design it follows; the modbusctl README and release notes
+document the result. Still open: §1 raw request send for vendor functions, and §2.7 serving FC08, FC17, FC20 and FC24
+(go-modbus has no generic request handler yet). Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
 
 Everything here reads and writes captures only through `go-modbus-capture` (`capture`, `mbcap`, `jsonl`, `mbcsv`).
 
