@@ -1,0 +1,16 @@
+{"t":"header","version":"0.1","tick_ns":1000,"wall_start":"2026-10-14T08:00:00Z","producer":"modbusctl 3.0.0","tags":{"site":"lab"}}
+{"t":"target","id":1,"label":"Inverter A","transport":"tcp","host":"192.168.2.201","port":502,"unit":21}
+{"t":"target","id":2,"label":"Meter, \"west\"","transport":"rtu","serial":{"device":"/dev/ttyUSB0","baud":19200,"parity":"even","data_bits":8,"stop_bits":1},"unit":3,"tags":{"bus":"A"}}
+{"t":"target","id":3,"label":"Behind a gateway","transport":"rtu-over-tcp","host":"gw.local","port":4001,"unit":7}
+{"t":"stream","id":1,"target":1,"role":"poll","label":"every second"}
+{"t":"stream","id":2,"target":1,"role":"identity"}
+{"t":"stream","id":3,"target":2,"role":"poll","label":"every minute"}
+{"t":"stream","id":4,"target":3,"role":"scan"}
+{"t":"s","s":1,"at":1000,"req":"0300000004","resp":"03080001000200030004"}
+{"t":"s","s":3,"at":2100,"req":"0400100002","resp":"040441c80000"}
+{"t":"s","s":2,"at":2050,"req":"2b0e0100","resp":"2b0e0101000002000441434d4501025831"}
+{"t":"s","s":4,"at":2600,"req":"0300000001","resp":"0302abcd"}
+{"t":"s","s":1,"at":1001000,"req":"0300000004","resp":"03080001000200030005"}
+{"t":"s","s":1,"at":2001000,"req":"0300000004","resp":"03080001000200030006"}
+{"t":"s","s":3,"at":60002100,"req":"0400100002","resp":"040441c90000"}
+{"t":"end","at":60010000}

@@ -1,0 +1,16 @@
+# Build output
+/bin/*
+/release/*
+
+# Editor settings
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Coverage reports
+coverage.*
+cover.*
+
+# Fuzz cache written by go test -fuzz outside testdata
+/fuzz/

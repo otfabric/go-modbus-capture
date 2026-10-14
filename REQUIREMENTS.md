@@ -1,9 +1,13 @@
 # go-modbus-capture — requirements
 
-Status: design complete enough to start phase 2. Written 2026-10-14 from an investigation of the
-existing MCAP v1 record/replay code in `otfabric/modbusctl`; scope narrowed the same day to the file
-format and its encodings (see section 3 and decision 12). Companion documents:
+> **Audience: contributors.** This is the design record of the project: goals, decisions and phases. To use
+> the format, the library or the CLI, start at the [README](README.md) and the [documentation](docs/README.md).
 
+Status: phases 1–3 implemented; the format is draft 0.1 until it is calibrated on real captures (section 15).
+Written 2026-10-14 from an investigation of the existing MCAP v1 record/replay code in `otfabric/modbusctl`;
+scope narrowed the same day to the file format and its encodings (see section 3 and decision 12). Companion documents:
+
+- [`docs/README.md`](docs/README.md) — the user documentation (guides, CLI and library reference)
 - [`docs/FORMAT.md`](docs/FORMAT.md) — MBCAP binary, JSON Lines and CSV formats (draft spec)
 - [`docs/HANDOFF-MODBUSCTL.md`](docs/HANDOFF-MODBUSCTL.md) — recorder and replay design, moved out of this repo
 - [`docs/MCAP-V1-ANALYSIS.md`](docs/MCAP-V1-ANALYSIS.md) — what the old format does and why it is being replaced
@@ -173,17 +177,21 @@ No package imports `go-modbus` or does network or serial I/O.
 | `mbcsv` | Long CSV writer and reader (lossless); wide CSV view writer (one-way) |
 | `edit` | Operations producing new captures: filter (time window, targets, streams, function codes), split, merge/cat (rebase on wall-clock start, renumber ids), trim; provenance tags |
 | `cmd/mbcapctl` | Command-line tool over capture files (section 11) |
+| `internal/format` | Encoding detection from content and file names; readers and writers by name (used by `mbcapctl`) |
+| `internal/synth` | Synthetic capture generator for tests and benchmarks (the Go port of `docs/sizemodel/bench.py`) |
+| `internal/fuzzcap` | Shared fuzz seeds and round-trip properties |
 
 Conventions: match the `otfabric` repositories (see `go-modbus`, `go-modbus-identity`, `modbusctl`):
 same Go version as `go-modbus`'s `go.mod`, standard library only (zstd, if added, lives behind a build tag or
-sub-module; `mbcapctl` may use the same CLI library as `modbusctl`), table-driven tests, lint config copied from sibling repos.
+sub-module), table-driven tests, lint config copied from sibling repos. `mbcapctl` uses the standard `flag` package
+too (decision 16), so the module has no dependencies at all.
 
 ## 10. Writer requirements (for recorders built on the library)
 
 - Targets and streams can be added at any point of a capture (a scan that discovers new units).
 - Options: change-only mode, record-exceptions flag (decision 6), compression, block size.
-- Blocks are written as they fill; an optional timed flush serves live capture; the file stays valid after every
-  flushed block.
+- Blocks are written as they fill; for live capture the recorder calls `Flush` on a timer (the writer starts no
+  goroutine); the file stays readable up to every flushed block.
 - On clean close the writer writes the Index and Footer.
 - The writer never seeks, so it can write to a pipe or socket.
 
@@ -234,6 +242,9 @@ values, PDUs or the relative times of samples. All of them are thin wrappers ove
 | 11 | `modbus-simulator` | Decide later; its JSON fixtures/JSONL traces overlap | A capture→fixture converter is the likely first bridge |
 | 12 | Repository scope | File format, encodings and file tooling only. No capture, no replay, no Modbus I/O, no go-modbus dependency. Capture and replay land in `modbusctl` and a later tool | Owner's direction, 2026-10-14 |
 | 13 | Text formats | JSON Lines (canonical) and long CSV are both lossless and importable; wide CSV is a one-way view | Owner's direction, 2026-10-14: export/import to text-based formats |
+| 14 | Draft version | Files carry format version 0.1 until the format is frozen as 1.0; 1.0 readers will not read 0.x | Calibration may still change the binary coding; draft files must not pass for frozen ones |
+| 15 | Carriage returns | Strings in a capture hold no CR (U+000D) | RFC 4180 readers, `encoding/csv` included, turn CR LF inside a quoted field into LF: long CSV could not be lossless otherwise |
+| 16 | CLI library | `mbcapctl` uses the standard `flag` package, not cobra | Keeps the module free of dependencies for the GUIs and viewers that import it |
 
 Decisions 7 and 8 (unrecorded requests, before first sample) were replay decisions; they moved to the hand-off
 as R2 and R3. Numbers are kept so references stay valid.
@@ -246,9 +257,10 @@ silently deviate.
 
 1. **go-modbus: client PDU tap** — done as [otfabric/go-modbus#1](https://github.com/otfabric/go-modbus/pull/1)
    (released in [v1.6.0](https://github.com/otfabric/go-modbus/releases/tag/v1.6.0)). It serves the recorder in `modbusctl`; this repo does not depend on it.
-2. **Core:** `capture`, `mbcap`, `jsonl`, `mbcapctl verify|convert|info|dump`. Round-trip and fuzz tests.
+2. **Core** — implemented: `capture`, `mbcap`, `jsonl`, `mbcapctl verify|convert|info|dump`. Round-trip and fuzz tests.
    **Calibrate the binary coding on real captures before freezing it** (see section 15).
-3. **File tooling:** `mbcsv` (long CSV both ways, wide CSV view), `edit`, `mbcapctl cat|merge|split|filter|trim|repair`.
+3. **File tooling** — implemented: `mbcsv` (long CSV both ways, wide CSV view), `edit`,
+   `mbcapctl cat|merge|split|filter|trim|repair`.
 4. **Consumers (outside this repo):** `modbusctl` moves `record`, `scan`, `read`, `server static` and `server replay`
    onto the library (see the hand-off); viewers/GUIs.
 
@@ -258,8 +270,9 @@ silently deviate.
   The owner has real v1 captures (e.g. the 192.168.2.201 sample in the `modbusctl` README). Convert a few
   with a throwaway script, measure, then freeze the DIFF/block-size parameters before declaring the format stable.
 - Confirm decisions 3–6 and 9–10 (section 13) with the owner.
-- Exact varint/field layouts in `docs/FORMAT.md`, and the long CSV columns, are a **draft**: finalize during phases 2–3,
-  write them back to the spec, and add golden files. Bump the draft marker once frozen.
+- The varint/field layouts in `docs/FORMAT.md` and the long CSV columns are implemented and pinned by golden files
+  as draft 0.1. Freeze them as 1.0 after calibration: bump `capture.VersionMajor`, regenerate the golden files
+  (`make golden`), and drop the draft marker.
 - Relationship to `modbus-simulator` (decision 11).
 
 ## 16. Where the old code lives (reference only)

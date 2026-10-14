@@ -1,5 +1,7 @@
 # MCAP v1 analysis (the format being replaced)
 
+> **Audience: contributors.** Background on the old `modbusctl` format. MBCAP does not read or write it.
+
 Source: `otfabric/modbusctl`, read 2026-10-14. MCAP v1 is **not** supported by this library; this file
 records why the new format exists and where the old code lives.
 

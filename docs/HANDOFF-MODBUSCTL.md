@@ -1,5 +1,8 @@
 # Hand-off: capture and replay (moves to `modbusctl`)
 
+> **Audience: `modbusctl` developers.** Design notes for recording and replaying captures, which are not part
+> of this repository.
+
 Status: moved out of `go-modbus-capture` on 2026-10-14 by owner decision. `go-modbus-capture` is a library for the
 MBCAP file format and its encodings, plus `mbcapctl` for working with capture files. It does not capture from devices
 and does not replay or host them. That work lands in `otfabric/modbusctl` (and a later tool on the owner's roadmap),
