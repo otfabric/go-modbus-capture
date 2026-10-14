@@ -1,0 +1,7 @@
+t,at,s,fc,req,resp,id,target,role,label,transport,host,port,unit,serial_device,baud,parity,data_bits,stop_bits,version,tick_ns,wall_start,producer,flags,tags
+header,,,,,,,,,,,,,,,,,,,0.1,1000,2026-10-14T09:30:00.5Z,modbusctl 3.0.0,,
+target,,,,,,1,,,PLC,tcp,10.0.0.5,502,1,,,,,,,,,,,
+stream,,,,,,1,1,identity,extended identification,,,,,,,,,,,,,,,
+s,12000,1,2b,2b0e0300,2b0e0383ff0303000441434d45010258310203312e30,,,,,,,,,,,,,,,,,,,
+s,19500,1,2b,2b0e0303,2b0e0383000001030b6578616d706c652e636f6d,,,,,,,,,,,,,,,,,,,
+end,20000,,,,,,,,,,,,,,,,,,,,,,,

@@ -1,0 +1,9 @@
+t,at,s,fc,req,resp,id,target,role,label,transport,host,port,unit,serial_device,baud,parity,data_bits,stop_bits,version,tick_ns,wall_start,producer,flags,tags
+header,,,,,,,,,,,,,,,,,,,0.1,1000,2026-10-14T11:00:00Z,modbusctl 3.0.0,exceptions,
+target,,,,,,1,,,Picky device,tcp,192.168.2.30,502,1,,,,,,,,,,,
+stream,,,,,,1,1,scan,,,,,,,,,,,,,,,,
+s,1000,1,03,0300000001,03020007,,,,,,,,,,,,,,,,,,,
+s,2000,1,03,0327100001,8302,,,,,,,,,,,,,,,,,,,
+s,3000,1,2b,2b0e0100,ab01,,,,,,,,,,,,,,,,,,,
+s,4000,1,11,11,9104,,,,,,,,,,,,,,,,,,,
+end,5000,,,,,,,,,,,,,,,,,,,,,,,

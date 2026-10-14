@@ -1,0 +1,8 @@
+{"t":"header","version":"0.1","tick_ns":1000,"wall_start":"2026-10-14T11:00:00Z","producer":"modbusctl 3.0.0","flags":{"exceptions":true}}
+{"t":"target","id":1,"label":"Picky device","transport":"tcp","host":"192.168.2.30","port":502,"unit":1}
+{"t":"stream","id":1,"target":1,"role":"scan"}
+{"t":"s","s":1,"at":1000,"req":"0300000001","resp":"03020007"}
+{"t":"s","s":1,"at":2000,"req":"0327100001","resp":"8302"}
+{"t":"s","s":1,"at":3000,"req":"2b0e0100","resp":"ab01"}
+{"t":"s","s":1,"at":4000,"req":"11","resp":"9104"}
+{"t":"end","at":5000}

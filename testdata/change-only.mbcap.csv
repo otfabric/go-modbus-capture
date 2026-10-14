@@ -1,0 +1,10 @@
+t,at,s,fc,req,resp,id,target,role,label,transport,host,port,unit,serial_device,baud,parity,data_bits,stop_bits,version,tick_ns,wall_start,producer,flags,tags
+header,,,,,,,,,,,,,,,,,,,0.1,1000,2026-10-14T12:00:00Z,modbusctl 3.0.0,change_only,
+target,,,,,,1,,,Mostly static meter,udp,192.168.2.40,502,1,,,,,,,,,,,
+stream,,,,,,1,1,poll,"every second, changes only",,,,,,,,,,,,,,,
+s,0,1,03,0300000003,0306000a000b000c,,,,,,,,,,,,,,,,,,,
+s,0,1,01,0100000008,010155,,,,,,,,,,,,,,,,,,,
+s,7000000,1,03,0300000003,0306000a000b000d,,,,,,,,,,,,,,,,,,,
+s,7000000,1,01,0100000008,010154,,,,,,,,,,,,,,,,,,,
+s,9000000,1,03,0300000003,0306000a000b000c,,,,,,,,,,,,,,,,,,,
+end,30000000,,,,,,,,,,,,,,,,,,,,,,,

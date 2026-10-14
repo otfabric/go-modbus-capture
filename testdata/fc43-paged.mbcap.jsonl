@@ -1,0 +1,6 @@
+{"t":"header","version":"0.1","tick_ns":1000,"wall_start":"2026-10-14T09:30:00.5Z","producer":"modbusctl 3.0.0"}
+{"t":"target","id":1,"label":"PLC","transport":"tcp","host":"10.0.0.5","port":502,"unit":1}
+{"t":"stream","id":1,"target":1,"role":"identity","label":"extended identification"}
+{"t":"s","s":1,"at":12000,"req":"2b0e0300","resp":"2b0e0383ff0303000441434d45010258310203312e30"}
+{"t":"s","s":1,"at":19500,"req":"2b0e0303","resp":"2b0e0383000001030b6578616d706c652e636f6d"}
+{"t":"end","at":20000}

@@ -1,0 +1,9 @@
+{"t":"header","version":"0.1","tick_ns":1000,"wall_start":"2026-10-14T12:00:00Z","producer":"modbusctl 3.0.0","flags":{"change_only":true}}
+{"t":"target","id":1,"label":"Mostly static meter","transport":"udp","host":"192.168.2.40","port":502,"unit":1}
+{"t":"stream","id":1,"target":1,"role":"poll","label":"every second, changes only"}
+{"t":"s","s":1,"at":0,"req":"0300000003","resp":"0306000a000b000c"}
+{"t":"s","s":1,"at":0,"req":"0100000008","resp":"010155"}
+{"t":"s","s":1,"at":7000000,"req":"0300000003","resp":"0306000a000b000d"}
+{"t":"s","s":1,"at":7000000,"req":"0100000008","resp":"010154"}
+{"t":"s","s":1,"at":9000000,"req":"0300000003","resp":"0306000a000b000c"}
+{"t":"end","at":30000000}
