@@ -42,7 +42,7 @@ type Config struct {
 	// ChangeOnly drops samples whose response equals the previous one.
 	ChangeOnly bool
 	// Extras adds a second target with one sample stream per read function
-	// (FC01, 02, 04, 07, 08, 11, 12, 17, 20, 24, a vendor function), an FC43
+	// (FC01, 02, 04, 07, 08, 11, 12, 17, 20, 24), an FC43
 	// identity stream read in two pages, exception responses, and samples
 	// of concurrent streams written out of time order.
 	Extras bool
@@ -184,7 +184,6 @@ func extras(rng *rand.Rand, it int, t capture.Ticks, add func(uint32, capture.Ti
 	add(2, at(1000), []byte{0x14, 0x07, 0x06, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02},
 		[]byte{0x14, 0x06, 0x05, 0x06, 0x0D, 0xFE, 0x00, byte(it)})
 	add(2, at(1100), []byte{0x18, 0x04, 0xDE}, []byte{0x18, 0x00, 0x06, 0x00, 0x02, 0x01, 0xB8, 0x12, byte(it)})
-	add(2, at(1200), []byte{0x41, 0x01, 0x02}, []byte{0x41, 0x0A, 0x0B, byte(it)}) // a vendor function
 	if it%5 == 0 {
 		add(2, at(1300), []byte{0x04, 0x27, 0x10, 0x00, 0x01}, []byte{0x84, 0x02}) // an exception
 	}

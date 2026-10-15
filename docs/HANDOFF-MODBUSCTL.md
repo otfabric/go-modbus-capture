@@ -10,9 +10,10 @@ built on top of this library.
 
 **Implemented in `modbusctl` 3.0.0** (`internal/capfile`: recorder; `internal/replay`: replay core and clock;
 `internal/modbus/server.go`: the servers). This file is the design it follows; the modbusctl README and release notes
-document the result. §2.7 (serving every function) is resolved by go-modbus
-[v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0); modbusctl's replay is moving to it. Still open:
-§1 raw request send for vendor functions, which needs a client API in go-modbus that is in progress. Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
+document the result. §2.7 (serving every read function) is resolved by go-modbus
+[v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0); modbusctl's replay is moving to it. Scope is
+the read functions of the Modbus specification only (`REQUIREMENTS.md` section 6): vendor and unknown function codes
+are neither recorded nor replayed. Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
 
 Everything here reads and writes captures only through `go-modbus-capture` (`capture`, `mbcap`, `jsonl`, `mbcsv`).
 
@@ -33,10 +34,9 @@ Everything here reads and writes captures only through `go-modbus-capture` (`cap
   monotonic reading), plus the caller's context. It also reports exception responses and responses the calling method
   then rejects; the recorder SHOULD check the method's error to decide what to keep. Writes and probes are reported
   too, so the recorder filters for reads.
-- **Raw request send**: go-modbus (up to v1.7.0) has no public method to send an arbitrary PDU. Recording vendor or
-  unknown read functions (the "other" row of `REQUIREMENTS.md` section 6) needs one; every listed read function already
-  has a typed method. A public raw send on the client is being added to go-modbus (planned v1.8.0); the recorder can
-  record vendor functions once it is released.
+- **Typed methods only**: every read function of `REQUIREMENTS.md` section 6 has a typed go-modbus client method, so
+  the recorder needs no raw request send. Vendor and unknown function codes are out of scope: a poll plan with one is
+  refused.
 
 ## 2. Replay semantics
 
@@ -117,16 +117,14 @@ index (`mbcap` reader exposes it).
 ### 2.7 Serving every function
 
 Resolved in go-modbus [v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0). Up to v1.6.x the server
-dispatched FC01–07, 11, 12, 15, 16, 22, 23 and 43 only, so a replayer could not host FC08, FC17, FC20, FC24 or vendor
-functions. v1.7.0 serves every function code the client sends (optional `DiagnosticsHandler`,
-`ReportServerIDHandler`, `ReadFileRecordHandler`, `WriteFileRecordHandler`, `FIFOQueueHandler`) and adds a
-**`RawRequestHandler`**: request PDU after the function code in, response PDU after the function code (or an error that
-maps to an exception, or `ErrNoResponse`) out. It receives vendor function codes and every standard function whose
-optional handler the device does not implement; FC01–06, 15 and 16 never reach it.
+dispatched FC01–07, 11, 12, 15, 16, 22, 23 and 43 only, so a replayer could not host FC08, FC17, FC20 or FC24. v1.7.0
+serves them through typed optional handlers: `DiagnosticsHandler`, `ReportServerIDHandler`, `ReadFileRecordHandler`
+and `FIFOQueueHandler`, next to the existing ones for FC07, 11, 12 and 43.
 
-A replayer serves recorded responses of any function through `RawRequestHandler` alone: look up the recorded response
-for the request PDU at replay time and return it as recorded, never rewritten. The data-model functions FC01–04 keep
-going through `RequestHandler`, so the sample-and-hold address timelines of §2 apply to them unchanged.
+A replayer implements those handlers and answers each request with the data of the recorded response, as recorded,
+never rewritten. FC01–04 go through `RequestHandler`, so the sample-and-hold address timelines of §2 apply to them
+unchanged. Every other function code is answered with Illegal Function by go-modbus: the replayer does not implement
+go-modbus's `RawRequestHandler`, because vendor and unknown functions are out of scope.
 
 ## 3. Tests the replay side needs
 

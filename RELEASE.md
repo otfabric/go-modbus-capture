@@ -1,5 +1,28 @@
 # go-modbus-capture Releases
 
+## v0.0.2
+
+**Date:** 2026-10-15
+**Previous release:** v0.0.1
+
+### Summary
+
+Captures hold the read functions of the Modbus specification and nothing else. v0.0.1 rejected only the write function codes, so it accepted vendor and unknown function codes, which were never in scope.
+
+### Changed
+
+- **`capture.CheckPDUs`, and with it every reader and writer:** the request function code must be a read function of the specification: FC01–04, 07, 08, 11, 12, 17, 20, 24 or 43. FC08 is accepted only with a data-returning sub-function (0x0000, 0x0002, 0x000B–0x0012), FC43 only with MEI type 14. Anything else is `ErrCorrupt`: a writer refuses the sample and a reader reports it, never a panic. New `capture.IsReadFunction`.
+- `docs/FORMAT.md`, `REQUIREMENTS.md` section 6, `docs/concepts.md` and the README say so; the "other / vendor function" row is gone. `mbcapctl info` no longer names vendor functions.
+- Test data: the vendor sample is removed from `testdata/every-fc.*` (regenerated) and from the synthetic captures; tests cover every accepted and rejected case.
+- `docs/HANDOFF-MODBUSCTL.md`: go-modbus v1.7.0 resolves serving FC08, FC17, FC20 and FC24 through typed handlers; no raw request send or raw handler is needed.
+- `make golden` runs the golden test in `mbcap`, where it lives.
+
+### Compatibility
+
+A capture with a vendor or unknown function code, a state-changing FC08 sub-function or FC43 with another MEI type, which v0.0.1 accepted, is now invalid. The file layout is unchanged.
+
+---
+
 ## v0.0.1
 
 **Date:** 2026-10-14

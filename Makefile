@@ -54,7 +54,7 @@ bench: ## Run benchmarks
 	@go test -run '^$$' -bench . -benchmem ./...
 
 golden: ## Regenerate derived golden files in testdata/ from the hand-written JSON Lines sources
-	@go test ./internal/golden -run TestGolden -update
+	@go test ./mbcap -run TestGolden -update
 
 lint: ## Run staticcheck
 	@echo "Running staticcheck"

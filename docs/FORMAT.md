@@ -45,9 +45,11 @@ invalid:
 - Strings (labels, producer, host, serial device, roles, tag keys and values): valid UTF-8 with **no
   carriage return** (U+000D), so that every text encoding keeps them; tag keys non-empty.
 - Ids: targets and streams are defined once, before use; a stream's target is defined.
-- PDUs: request and response 1 to 253 bytes. The request function code is 0x01–0x7F and **not a write**
-  (FC05, 06, 15, 16, 22, 23): captures hold reads only. The response function code is the request's, or
-  the request's with 0x80 set (an exception response).
+- PDUs: request and response 1 to 253 bytes. The request function code is a **read function of the Modbus
+  specification**: FC01–04, 07, 08, 11, 12, 17, 20, 24 or 43 (`REQUIREMENTS.md` section 6). FC08 only with a
+  data-returning sub-function (0x0000, 0x0002, 0x000B–0x0012), FC43 only with MEI type 14. Writes (FC05, 06,
+  15, 16, 22, 23), vendor, user-defined and unknown function codes are invalid: captures hold reads only. The
+  response function code is the request's, or the request's with 0x80 set (an exception response).
 - Exception responses only in a capture whose header records exceptions.
 - In a change-only capture, no response equals the previous response to the same request of the same
   stream (in file order).

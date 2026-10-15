@@ -38,6 +38,25 @@ var writeFunctions = [256]bool{0x05: true, 0x06: true, 0x0F: true, 0x10: true, 0
 // and 23). Captures never hold such samples.
 func IsWriteFunction(fc uint8) bool { return writeFunctions[fc] }
 
+// readFunctions are the read functions of the Modbus specification, the only
+// function codes a capture holds (REQUIREMENTS.md section 6).
+var readFunctions = [256]bool{
+	0x01: true, 0x02: true, 0x03: true, 0x04: true, 0x07: true, 0x08: true,
+	0x0B: true, 0x0C: true, 0x11: true, 0x14: true, 0x18: true, 0x2B: true,
+}
+
+// IsReadFunction reports whether fc is a read function of the Modbus
+// specification: FC01 to 04, 07, 08, 11, 12, 17, 20, 24 and 43. Vendor,
+// user-defined and other function codes are not supported.
+func IsReadFunction(fc uint8) bool { return readFunctions[fc] }
+
+// readDiagnostics reports whether an FC08 sub-function only returns data:
+// Return Query Data (0x00), Return Diagnostic Register (0x02) and the
+// counters 0x0B to 0x12. The others change the device.
+func readDiagnostics(sub uint16) bool {
+	return sub == 0x00 || sub == 0x02 || sub >= 0x0B && sub <= 0x12
+}
+
 // Checker checks a stream of records against the model's invariants, in the
 // order they are written or read:
 //
@@ -49,7 +68,9 @@ func IsWriteFunction(fc uint8) bool { return writeFunctions[fc] }
 //   - targets: positive unique ids, a known transport and parity;
 //   - streams: positive unique ids, a target defined before;
 //   - samples: a stream defined before; request and response PDUs of 1 to
-//     253 bytes; a request function code of 0x01 to 0x7F that is not a write;
+//     253 bytes; a request of a read function of the specification (see
+//     IsReadFunction), FC08 with a data-returning sub-function only and FC43
+//     with MEI type 14 only;
 //     a response with the request's function code or its exception code; an
 //     exception response only when the header records exceptions; in a
 //     change-only capture, no response equal to the previous response to the
@@ -211,10 +232,14 @@ func CheckPDUs(req, resp []byte) error {
 		return invalid("request PDU of %d bytes, want 1 to %d", len(req), MaxPDULen)
 	case len(resp) == 0 || len(resp) > MaxPDULen:
 		return invalid("response PDU of %d bytes, want 1 to %d", len(resp), MaxPDULen)
-	case req[0] == 0 || req[0]&0x80 != 0:
-		return invalid("request function code 0x%02x", req[0])
 	case IsWriteFunction(req[0]):
 		return invalid("request function code 0x%02x is a write; captures hold reads only", req[0])
+	case !IsReadFunction(req[0]):
+		return invalid("request function code 0x%02x is not a read function of the Modbus specification", req[0])
+	case req[0] == 0x08 && (len(req) < 3 || !readDiagnostics(uint16(req[1])<<8|uint16(req[2]))):
+		return invalid("FC08 request without a data-returning sub-function; captures hold reads only")
+	case req[0] == 0x2B && (len(req) < 2 || req[1] != 0x0E):
+		return invalid("FC43 request with an MEI type other than 14 (Read Device Identification)")
 	case resp[0]&0x7F != req[0]:
 		return invalid("response function code 0x%02x does not answer request function code 0x%02x", resp[0], req[0])
 	}

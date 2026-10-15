@@ -164,3 +164,41 @@ func TestSplitAddresses(t *testing.T) {
 		})
 	}
 }
+
+// Captures hold the read functions of the Modbus specification and nothing
+// else: no writes, no vendor or unknown function codes, no FC08 sub-function
+// that changes the device, no FC43 other than Read Device Identification.
+func TestCheckPDUsReadFunctionsOnly(t *testing.T) {
+	ok := [][]byte{
+		{0x01, 0, 0, 0, 1}, {0x02, 0, 0, 0, 1}, {0x03, 0, 0, 0, 1}, {0x04, 0, 0, 0, 1},
+		{0x07}, {0x08, 0x00, 0x00, 0x12, 0x34}, {0x08, 0x00, 0x02, 0, 0}, {0x08, 0x00, 0x0B, 0, 0},
+		{0x08, 0x00, 0x12, 0, 0}, {0x0B}, {0x0C}, {0x11}, {0x14, 0x07, 0x06, 0, 1, 0, 0, 0, 2},
+		{0x18, 0x04, 0xDE}, {0x2B, 0x0E, 0x01, 0x00},
+	}
+	for _, req := range ok {
+		if err := CheckPDUs(req, []byte{req[0], 0x00}); err != nil {
+			t.Errorf("% x: %v", req, err)
+		}
+		if err := CheckPDUs(req, []byte{req[0] | 0x80, 0x02}); err != nil {
+			t.Errorf("% x with an exception response: %v", req, err)
+		}
+	}
+	bad := [][]byte{
+		{0x00}, {0x80}, {0xFF},
+		{0x05, 0, 0, 0xFF, 0}, {0x06, 0, 0, 0, 1}, {0x0F}, {0x10}, {0x16}, {0x17},
+		{0x09}, {0x0D}, {0x15}, {0x41, 0x01, 0x02}, {0x64}, {0x65}, {0x7F},
+		{0x08}, {0x08, 0x00}, {0x08, 0x00, 0x01, 0xFF, 0x00}, {0x08, 0x00, 0x04, 0, 0},
+		{0x08, 0x00, 0x0A, 0, 0}, {0x08, 0x00, 0x14, 0, 0}, {0x08, 0x12, 0x34, 0, 0},
+		{0x2B}, {0x2B, 0x0D, 0x00},
+	}
+	for _, req := range bad {
+		if err := CheckPDUs(req, []byte{req[0], 0x00}); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("% x accepted (%v)", req, err)
+		}
+	}
+	for fc := 0; fc < 256; fc++ {
+		if IsReadFunction(uint8(fc)) && IsWriteFunction(uint8(fc)) {
+			t.Errorf("0x%02x is both a read and a write function", fc)
+		}
+	}
+}

@@ -34,6 +34,8 @@ func TestReaderRules(t *testing.T) {
 		{"blank lines are ignored", head + "\n  \n" + defs, 0, nil},
 		{"upper-case hex is read", head + defs + `{"t":"s","s":1,"at":5,"req":"0300000001","resp":"030200AB"}` + "\n", 1, nil},
 		{"a second header", head + head, 0, capture.ErrCorrupt},
+		{"a vendor function code", head + defs + `{"t":"s","s":1,"at":5,"req":"410102","resp":"410a0b"}` + "\n", 0, capture.ErrCorrupt},
+		{"a state-changing FC08 sub-function", head + defs + `{"t":"s","s":1,"at":5,"req":"08000a0000","resp":"08000a0000"}` + "\n", 0, capture.ErrCorrupt},
 		{"first line not a header", defs, 0, capture.ErrCorrupt},
 		{"unknown major version", strings.Replace(head, `"0.1"`, `"1.0"`, 1), 0, capture.ErrCorrupt},
 		{"a later minor version", strings.Replace(head, `"0.1"`, `"0.9"`, 1), 0, nil},
