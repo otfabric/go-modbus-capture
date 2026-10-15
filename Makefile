@@ -1,4 +1,4 @@
-.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden
+.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz chaos bench build check clean golden
 
 # Prefer module-local dependency resolution when a sibling go.work exists.
 export GOWORK := off
@@ -28,6 +28,9 @@ GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
 FUZZ_TIME ?= 30s
 FUZZ_TARGETS = ./mbcap:FuzzReader ./mbcap:FuzzRoundTrip ./jsonl:FuzzReader ./mbcsv:FuzzReader
 
+# Seeds per encoding in `make chaos` (`go test` runs 24, `go test -short` 4).
+CHAOS_SEEDS ?= 500
+
 all: check build ## Run checks and build bin/mbcapctl
 
 check: fmt fmt-check lint lint-ci vet vuln test ## Format, lint, vet, vuln, and test
@@ -49,6 +52,10 @@ fuzz: ## Run every fuzz target for FUZZ_TIME
 		echo "Fuzzing $$name in $$pkg for $(FUZZ_TIME)"; \
 		go test -run '^$$' -fuzz "^$$name$$" -fuzztime $(FUZZ_TIME) $$pkg || exit 1; \
 	done
+
+chaos: ## Run the chaos tests (damaged captures) with CHAOS_SEEDS seeds per encoding
+	@echo "Running chaos tests with $(CHAOS_SEEDS) seeds (race detector)"
+	@MBCAP_CHAOS_SEEDS=$(CHAOS_SEEDS) go test -count=1 -race -timeout 60m -run 'Chaos' ./mbcap ./jsonl ./mbcsv
 
 bench: ## Run benchmarks
 	@go test -run '^$$' -bench . -benchmem ./...

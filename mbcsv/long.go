@@ -78,6 +78,7 @@ const (
 )
 
 // Writer writes a capture as long CSV.
+// It is not safe for concurrent use; separate Writers may run concurrently.
 type Writer struct {
 	cw     *csv.Writer
 	ck     *capture.Checker
@@ -220,12 +221,14 @@ func (w *Writer) Close(end capture.End) error {
 }
 
 // Reader reads a capture from long CSV.
+// It is not safe for concurrent use; separate Readers may run concurrently.
 type Reader struct {
 	cr     *csv.Reader
 	budget *budgetReader
 	cols   [numCols]int // index of each known column in a row, -1 if absent
 	h      capture.Header
 	ck     *capture.Checker
+	width  int // number of columns
 	ahead  []string
 	aerr   error
 	line   int
@@ -246,6 +249,11 @@ func NewReader(r io.Reader) (*Reader, error) {
 	if err != nil {
 		return nil, lr.csvErr(err)
 	}
+	lr.width = len(names)
+	lr.advance()
+	if lr.aerr == io.EOF && !b.endsWithNewline() {
+		return nil, fmt.Errorf("mbcsv: %w: the column names have no newline", capture.ErrTruncated)
+	}
 	for i := range lr.cols {
 		lr.cols[i] = -1
 	}
@@ -262,7 +270,6 @@ func NewReader(r io.Reader) (*Reader, error) {
 	if lr.cols[colT] < 0 {
 		return nil, fmt.Errorf("mbcsv: %w: no t column", capture.ErrCorrupt)
 	}
-	lr.advance()
 	row, err := lr.next()
 	if err == io.EOF {
 		return nil, fmt.Errorf("mbcsv: %w: no header row", capture.ErrTruncated)
@@ -292,6 +299,15 @@ func (r *Reader) Header() capture.Header { return r.h }
 func (r *Reader) advance() {
 	r.budget.reset()
 	r.ahead, r.aerr = r.cr.Read()
+	var pe *csv.ParseError
+	if errors.As(r.aerr, &pe) && errors.Is(pe.Err, csv.ErrFieldCount) && len(r.ahead) < r.width {
+		// A row with too few fields may be the last one, cut short by the
+		// end of the input: that is a truncation, not corruption.
+		r.budget.reset()
+		if _, err := r.cr.Read(); err == io.EOF && !r.budget.endsWithNewline() {
+			r.aerr = fmt.Errorf("mbcsv: line %d: %w: last row has no newline", pe.Line, capture.ErrTruncated)
+		}
+	}
 }
 
 func (r *Reader) next() ([]string, error) {

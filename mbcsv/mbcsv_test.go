@@ -50,6 +50,12 @@ func TestReaderRules(t *testing.T) {
 		{"bad number", cols + head + "target,,,,,,one,,1,,,\n", 0, capture.ErrCorrupt},
 		{"last row without newline", cols + head + defs + "s,5,1,03,0300000001,03020007,,,,,,", 0, capture.ErrTruncated},
 		{"cut inside a quoted field", cols + head + `target,,,,,,1,,1,,,"abc`, 0, capture.ErrTruncated},
+		// Regressions (found by TestChaos): a cut that leaves the last row or the
+		// column names short was reported as corruption.
+		{"last row cut to too few fields", cols + head + defs + "s,5,1,03", 0, capture.ErrTruncated},
+		{"header row cut to too few fields", cols + "header,,,", 0, capture.ErrTruncated},
+		{"column names cut", "t,at,s,fc,req,resp,id,target,unit,version,tick_ns,wall_start,t", 0, capture.ErrTruncated},
+		{"a short row before others", cols + head + "target,,,\n" + defs, 0, capture.ErrCorrupt},
 		{"empty input", "", 0, capture.ErrTruncated},
 		{"only column names", cols, 0, capture.ErrTruncated},
 		{"too long a row", cols + head + "note," + strings.Repeat("a", MaxRecordLen+10) + "\n", 0, capture.ErrCorrupt},

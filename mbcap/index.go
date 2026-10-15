@@ -81,6 +81,10 @@ type RepairReport struct {
 	Samples int
 	// SkippedBlocks is the number of blocks skipped for a bad CRC.
 	SkippedBlocks int
+	// Dropped is the number of samples left out of a change-only capture
+	// because, with the samples of a skipped block lost, they repeat the
+	// response before them.
+	Dropped int
 	// Truncated is true when the input ended before its index and footer.
 	Truncated bool
 	// Stopped is the error that ended the copy early, if any; records after
@@ -92,10 +96,11 @@ type RepairReport struct {
 }
 
 // Repair reads src as far as it can and writes a complete file to dst, with
-// a new index and footer. It skips blocks with a bad CRC and stops at a
-// truncation or any other error, keeping everything before it. The end is
-// unknown unless src still holds its index. It fails only when the header
-// cannot be read or dst cannot be written.
+// a new index and footer. It skips blocks with a bad CRC (and, in a
+// change-only capture, the samples that then repeat the response before
+// them) and stops at a truncation or any other error, keeping everything
+// before it. The end is unknown unless src still holds its index. It fails
+// only when the header cannot be read or dst cannot be written.
 func Repair(dst io.Writer, src io.Reader, opts *Options) (RepairReport, error) {
 	var rep RepairReport
 	r, err := NewReader(src)
@@ -131,6 +136,7 @@ func Repair(dst io.Writer, src io.Reader, opts *Options) (RepairReport, error) {
 		}
 	}
 	rep.SkippedBlocks = r.Skipped()
+	rep.Dropped = r.Dropped()
 	if rep.End.Known && rep.End.At < w.ck.MaxAt() {
 		rep.End = capture.End{}
 	}

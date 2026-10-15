@@ -20,6 +20,9 @@ import (
 // Reader reads an MBCAP file as a stream of records. It checks every block's
 // CRC and every record against the model's invariants (capture.Checker), and
 // at the end the index against the blocks it read.
+//
+// A Reader is not safe for concurrent use. Separate Readers share no state and
+// may run concurrently.
 type Reader struct {
 	br  *bufio.Reader
 	off uint64 // offset of the next byte to read
@@ -28,9 +31,12 @@ type Reader struct {
 
 	// SkipCorrupt makes the reader skip a block whose CRC does not match,
 	// instead of failing. Samples in a skipped data block are lost; a skipped
-	// definition makes later samples fail. Set it before the first Next.
+	// definition makes later samples fail. In a change-only capture, a sample
+	// after a skipped block whose response equals the last one kept is
+	// dropped (see Dropped). Set it before the first Next.
 	SkipCorrupt bool
 	skipped     int
+	dropped     int
 
 	minor     uint64
 	templates map[uint64][]byte
@@ -86,6 +92,10 @@ func (r *Reader) Version() (major, minor int) { return capture.VersionMajor, int
 // Skipped returns the number of blocks skipped because of SkipCorrupt.
 func (r *Reader) Skipped() int { return r.skipped }
 
+// Dropped returns the number of samples dropped after a skipped block because
+// they repeat, in a change-only capture, the last response kept.
+func (r *Reader) Dropped() int { return r.dropped }
+
 // Next returns the next record, or io.EOF after the last one. An input that
 // ends before the index and footer gives an error wrapping
 // capture.ErrTruncated after the last complete block's records.
@@ -97,6 +107,20 @@ func (r *Reader) Next() (capture.Record, error) {
 		if len(r.pending) > 0 {
 			s := r.pending[0]
 			r.pending = r.pending[1:]
+			if r.skipped > 0 && !s.IsException() {
+				// In a change-only capture, a skipped data block can leave a
+				// response equal to the last one kept: the change between them
+				// was lost. Drop it, as a change-only writer would.
+				keep, err := r.ck.Admit(s)
+				if err != nil {
+					return nil, r.fail(err)
+				}
+				if !keep {
+					r.dropped++
+					continue
+				}
+				return s, nil
+			}
 			if err := r.ck.Sample(s); err != nil {
 				return nil, r.fail(err)
 			}
