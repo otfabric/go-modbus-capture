@@ -128,19 +128,16 @@ type outputOptions struct {
 	blockSize   int
 }
 
-var outOpts outputOptions
-
-func outputFlags(fs *flag.FlagSet) {
-	outOpts = outputOptions{}
-	fs.StringVar(&outOpts.format, "format", "", "output encoding: mbcap, jsonl, csv or wide-csv (default: from the output file extension)")
-	fs.StringVar(&outOpts.compression, "compression", "deflate", "mbcap data block compression: deflate or none")
-	fs.IntVar(&outOpts.blockSize, "block-samples", mbcap.DefaultBlockSamples, "mbcap samples per data block")
+func outputFlags(o *options, fs *flag.FlagSet) {
+	fs.StringVar(&o.out.format, "format", "", "output encoding: mbcap, jsonl, csv or wide-csv (default: from the output file extension)")
+	fs.StringVar(&o.out.compression, "compression", "deflate", "mbcap data block compression: deflate or none")
+	fs.IntVar(&o.out.blockSize, "block-samples", mbcap.DefaultBlockSamples, "mbcap samples per data block")
 }
 
 // outputFormat resolves the encoding of an output file.
-func outputFormat(path string) (format.Format, error) {
-	if outOpts.format != "" {
-		return format.Parse(outOpts.format)
+func (e *env) outputFormat(path string) (format.Format, error) {
+	if e.opt.out.format != "" {
+		return format.Parse(e.opt.out.format)
 	}
 	if f := format.FromPath(path); f != format.Unknown {
 		return f, nil
@@ -151,21 +148,21 @@ func outputFormat(path string) (format.Format, error) {
 	return format.Unknown, usageErr("cannot tell the encoding of %s from its name: use --format", path)
 }
 
-func binaryOptions() (*mbcap.Options, error) {
-	o := &mbcap.Options{BlockSamples: outOpts.blockSize}
-	switch outOpts.compression {
+func (e *env) binaryOptions() (*mbcap.Options, error) {
+	o := &mbcap.Options{BlockSamples: e.opt.out.blockSize}
+	switch e.opt.out.compression {
 	case "deflate", "":
 	case "none":
 		o.Compression = mbcap.NoCompression
 	default:
-		return nil, usageErr("unknown compression %q (want deflate or none)", outOpts.compression)
+		return nil, usageErr("unknown compression %q (want deflate or none)", e.opt.out.compression)
 	}
 	return o, nil
 }
 
 // writerFor opens a capture writer on out in encoding f.
-func writerFor(out *output, f format.Format, h capture.Header) (capture.Writer, error) {
-	opts, err := binaryOptions()
+func (e *env) writerFor(out *output, f format.Format, h capture.Header) (capture.Writer, error) {
+	opts, err := e.binaryOptions()
 	if err != nil {
 		return nil, err
 	}

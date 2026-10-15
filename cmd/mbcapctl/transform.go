@@ -21,21 +21,21 @@ import (
 // edit.OpenFunc for it. finish commits the file once the operation succeeded,
 // or removes it.
 func (e *env) writeTo(path string, inputs ...string) (open edit.OpenFunc, finish func(error) error, err error) {
-	f, err := outputFormat(path)
+	f, err := e.outputFormat(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	if f == format.WideCSV {
 		return nil, nil, usageErr("wide-csv is a view: write it with mbcapctl convert")
 	}
-	if _, err := binaryOptions(); err != nil {
+	if _, err := e.binaryOptions(); err != nil {
 		return nil, nil, err
 	}
 	out, err := e.create(path, inputs...)
 	if err != nil {
 		return nil, nil, err
 	}
-	open = func(h capture.Header) (capture.Writer, error) { return writerFor(out, f, h) }
+	open = func(h capture.Header) (capture.Writer, error) { return e.writerFor(out, f, h) }
 	finish = func(opErr error) error {
 		if opErr != nil {
 			out.abort()
@@ -51,7 +51,7 @@ func runConvert(e *env, _ *flag.FlagSet, args []string) error {
 		return usageErr("convert takes an input and an output file")
 	}
 	src, dst := args[0], args[1]
-	f, err := outputFormat(dst)
+	f, err := e.outputFormat(dst)
 	if err != nil {
 		return err
 	}
@@ -91,12 +91,9 @@ func runConvert(e *env, _ *flag.FlagSet, args []string) error {
 	return finish(capture.Copy(w, in.r))
 }
 
-var mergeOut string
-
-func mergeFlags(fs *flag.FlagSet) {
-	outputFlags(fs)
-	mergeOut = ""
-	fs.StringVar(&mergeOut, "o", "", "output file (required)")
+func mergeFlags(o *options, fs *flag.FlagSet) {
+	outputFlags(o, fs)
+	fs.StringVar(&o.mergeOut, "o", "", "output file (required)")
 }
 
 func runCat(e *env, _ *flag.FlagSet, args []string) error {
@@ -108,7 +105,7 @@ func runMerge(e *env, _ *flag.FlagSet, args []string) error {
 }
 
 func runMergeMode(e *env, args []string, mode edit.MergeMode) error {
-	if mergeOut == "" || len(args) == 0 {
+	if e.opt.mergeOut == "" || len(args) == 0 {
 		return usageErr("need -o OUT and at least one input")
 	}
 	var inputs []edit.Input
@@ -119,7 +116,7 @@ func runMergeMode(e *env, args []string, mode edit.MergeMode) error {
 		}
 		inputs = append(inputs, edit.Input{Name: filepath.Base(path), Capture: c})
 	}
-	open, finish, err := e.writeTo(mergeOut, args...)
+	open, finish, err := e.writeTo(e.opt.mergeOut, args...)
 	if err != nil {
 		return err
 	}
@@ -127,16 +124,10 @@ func runMergeMode(e *env, args []string, mode edit.MergeMode) error {
 	return finish(err)
 }
 
-var (
-	splitBy  string
-	splitDir string
-)
-
-func splitFlags(fs *flag.FlagSet) {
-	outputFlags(fs)
-	splitBy, splitDir = "", ""
-	fs.StringVar(&splitBy, "by", "", "split per target, stream or fc (required)")
-	fs.StringVar(&splitDir, "dir", ".", "directory for the parts")
+func splitFlags(o *options, fs *flag.FlagSet) {
+	outputFlags(o, fs)
+	fs.StringVar(&o.splitBy, "by", "", "split per target, stream or fc (required)")
+	fs.StringVar(&o.splitDir, "dir", ".", "directory for the parts")
 }
 
 func runSplit(e *env, _ *flag.FlagSet, args []string) error {
@@ -144,7 +135,7 @@ func runSplit(e *env, _ *flag.FlagSet, args []string) error {
 		return usageErr("split takes one input file")
 	}
 	var by edit.SplitBy
-	switch splitBy {
+	switch e.opt.splitBy {
 	case "target":
 		by = edit.ByTarget
 	case "stream":
@@ -163,8 +154,8 @@ func runSplit(e *env, _ *flag.FlagSet, args []string) error {
 
 	// Parts are named after the input: capture.mbcap → capture.stream-1.mbcap.
 	f := in.format
-	if outOpts.format != "" {
-		if f, err = format.Parse(outOpts.format); err != nil {
+	if e.opt.out.format != "" {
+		if f, err = format.Parse(e.opt.out.format); err != nil {
 			return usageErr("%v", err)
 		}
 	}
@@ -174,12 +165,12 @@ func runSplit(e *env, _ *flag.FlagSet, args []string) error {
 	base, ext := splitName(filepath.Base(src), f)
 	outs := map[string]*output{}
 	_, err = edit.Split(in.r, by, e.step, func(key string, h capture.Header) (capture.Writer, error) {
-		out, err := e.create(filepath.Join(splitDir, base+"."+key+ext), src)
+		out, err := e.create(filepath.Join(e.opt.splitDir, base+"."+key+ext), src)
 		if err != nil {
 			return nil, err
 		}
 		outs[key] = out
-		return writerFor(out, f, h)
+		return e.writerFor(out, f, h)
 	})
 	for _, key := range sortedKeys(outs) {
 		out := outs[key]
@@ -215,22 +206,16 @@ func splitName(src string, f format.Format) (string, string) {
 	}
 }
 
-var filterOpts struct {
-	from, to                    timeFlag
-	targets, streams, functions listFlag
-}
-
-func filterFlags(fs *flag.FlagSet) {
-	outputFlags(fs)
-	filterOpts.from, filterOpts.to = timeFlag{}, timeFlag{}
-	filterOpts.targets = listFlag{bits: 32}
-	filterOpts.streams = listFlag{bits: 32}
-	filterOpts.functions = listFlag{bits: 8}
-	fs.Var(&filterOpts.from, "from", "keep samples at or after this time since the start (duration such as 90s, or ticks such as 1234t)")
-	fs.Var(&filterOpts.to, "to", "keep samples before this time since the start")
-	fs.Var(&filterOpts.targets, "target", "keep these target ids (comma-separated, repeatable)")
-	fs.Var(&filterOpts.streams, "stream", "keep these stream ids (comma-separated, repeatable)")
-	fs.Var(&filterOpts.functions, "fc", "keep these function codes, decimal as in FC43, or 0x-prefixed hex (comma-separated, repeatable)")
+func filterFlags(o *options, fs *flag.FlagSet) {
+	outputFlags(o, fs)
+	o.filter.targets = listFlag{bits: 32}
+	o.filter.streams = listFlag{bits: 32}
+	o.filter.functions = listFlag{bits: 8}
+	fs.Var(&o.filter.from, "from", "keep samples at or after this time since the start (duration such as 90s, or ticks such as 1234t)")
+	fs.Var(&o.filter.to, "to", "keep samples before this time since the start")
+	fs.Var(&o.filter.targets, "target", "keep these target ids (comma-separated, repeatable)")
+	fs.Var(&o.filter.streams, "stream", "keep these stream ids (comma-separated, repeatable)")
+	fs.Var(&o.filter.functions, "fc", "keep these function codes, decimal as in FC43, or 0x-prefixed hex (comma-separated, repeatable)")
 }
 
 func runFilter(e *env, _ *flag.FlagSet, args []string) error {
@@ -244,11 +229,11 @@ func runFilter(e *env, _ *flag.FlagSet, args []string) error {
 	defer in.close()
 	h := in.r.Header()
 	sel := edit.Selection{
-		Targets:   filterOpts.targets.u32(),
-		Streams:   filterOpts.streams.u32(),
-		Functions: filterOpts.functions.u8(),
-		From:      filterOpts.from.resolve(h),
-		To:        filterOpts.to.resolve(h),
+		Targets:   e.opt.filter.targets.u32(),
+		Streams:   e.opt.filter.streams.u32(),
+		Functions: e.opt.filter.functions.u8(),
+		From:      e.opt.filter.from.resolve(h),
+		To:        e.opt.filter.to.resolve(h),
 	}
 	open, finish, err := e.writeTo(args[1], args[0])
 	if err != nil {
@@ -261,20 +246,17 @@ func runFilter(e *env, _ *flag.FlagSet, args []string) error {
 	return finish(err)
 }
 
-var trimOpts struct{ from, to timeFlag }
-
-func trimFlags(fs *flag.FlagSet) {
-	outputFlags(fs)
-	trimOpts.from, trimOpts.to = timeFlag{}, timeFlag{}
-	fs.Var(&trimOpts.from, "from", "start of the window, which becomes time 0 (duration such as 90s, or ticks such as 1234t)")
-	fs.Var(&trimOpts.to, "to", "end of the window (exclusive)")
+func trimFlags(o *options, fs *flag.FlagSet) {
+	outputFlags(o, fs)
+	fs.Var(&o.trim.from, "from", "start of the window, which becomes time 0 (duration such as 90s, or ticks such as 1234t)")
+	fs.Var(&o.trim.to, "to", "end of the window (exclusive)")
 }
 
 func runTrim(e *env, _ *flag.FlagSet, args []string) error {
 	if len(args) != 2 {
 		return usageErr("trim takes an input and an output file")
 	}
-	if !trimOpts.from.set && !trimOpts.to.set {
+	if !e.opt.trim.from.set && !e.opt.trim.to.set {
 		return usageErr("trim needs --from and/or --to")
 	}
 	in, err := e.open(args[0])
@@ -287,7 +269,7 @@ func runTrim(e *env, _ *flag.FlagSet, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = edit.Trim(in.r, trimOpts.from.resolve(h), trimOpts.to.resolve(h), e.step, open)
+	_, err = edit.Trim(in.r, e.opt.trim.from.resolve(h), e.opt.trim.to.resolve(h), e.step, open)
 	return finish(err)
 }
 
@@ -296,14 +278,14 @@ func runRepair(e *env, _ *flag.FlagSet, args []string) error {
 		return usageErr("repair takes an input and an output file")
 	}
 	src, dst := args[0], args[1]
-	f, err := outputFormat(dst)
+	f, err := e.outputFormat(dst)
 	if err != nil {
 		return err
 	}
 	if f != format.Binary {
 		return usageErr("repair writes mbcap; convert the repaired file afterwards")
 	}
-	opts, err := binaryOptions()
+	opts, err := e.binaryOptions()
 	if err != nil {
 		return err
 	}
@@ -327,6 +309,9 @@ func runRepair(e *env, _ *flag.FlagSet, args []string) error {
 	_, _ = fmt.Fprintf(e.stdout, "%s: kept %d samples", dst, rep.Samples)
 	if rep.SkippedBlocks > 0 {
 		_, _ = fmt.Fprintf(e.stdout, ", skipped %d damaged blocks", rep.SkippedBlocks)
+	}
+	if rep.Dropped > 0 {
+		_, _ = fmt.Fprintf(e.stdout, ", dropped %d samples that repeat the one before (change-only)", rep.Dropped)
 	}
 	if rep.Truncated {
 		_, _ = fmt.Fprint(e.stdout, ", input was truncated")

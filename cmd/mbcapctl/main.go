@@ -36,7 +36,7 @@ type command struct {
 	args    string
 	summary string
 	run     func(e *env, fs *flag.FlagSet, args []string) error
-	flags   func(fs *flag.FlagSet)
+	flags   func(o *options, fs *flag.FlagSet)
 }
 
 func commands() []*command {
@@ -56,6 +56,22 @@ func commands() []*command {
 	}
 }
 
+// options are the flag values of one command line. They live in the env of one
+// run, not in package variables, so that run can be called concurrently.
+type options struct {
+	out      outputOptions
+	infoJSON bool
+	dumpWall bool
+	mergeOut string
+	splitBy  string
+	splitDir string
+	filter   struct {
+		from, to                    timeFlag
+		targets, streams, functions listFlag
+	}
+	trim struct{ from, to timeFlag }
+}
+
 // env is what a command reads and writes besides files.
 type env struct {
 	stdin  io.Reader
@@ -63,6 +79,8 @@ type env struct {
 	stderr io.Writer
 	// step is the provenance step of the running command.
 	step string
+	// opt holds the flags of the running command.
+	opt *options
 }
 
 func main() {
@@ -77,7 +95,7 @@ func usageErr(format string, args ...any) error {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	e := &env{stdin: stdin, stdout: stdout, stderr: stderr}
+	e := &env{stdin: stdin, stdout: stdout, stderr: stderr, opt: &options{}}
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
 		usage(stdout)
 		if len(args) == 0 {
@@ -106,7 +124,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if cmd.flags != nil {
-		cmd.flags(fs)
+		cmd.flags(e.opt, fs)
 	}
 	if err := fs.Parse(interleaved(fs, args[1:])); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -167,12 +185,12 @@ func hasFlags(fs *flag.FlagSet) bool {
 	return n > 0
 }
 
-// provenanceStep describes the command and its flags, without file names,
-// for the provenance tag of the files it writes.
+// provenanceStep describes the command and its flags, without file or
+// directory names, for the provenance tag of the files it writes.
 func provenanceStep(name string, fs *flag.FlagSet) string {
 	var parts []string
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "o" || f.Name == "output" {
+		if f.Name == "o" || f.Name == "output" || f.Name == "dir" {
 			return
 		}
 		parts = append(parts, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

@@ -98,11 +98,8 @@ type IndexInfo struct {
 	DataBlocks int `json:"data_blocks"`
 }
 
-var infoJSON bool
-
-func infoFlags(fs *flag.FlagSet) {
-	infoJSON = false
-	fs.BoolVar(&infoJSON, "json", false, "print the summary as JSON")
+func infoFlags(o *options, fs *flag.FlagSet) {
+	fs.BoolVar(&o.infoJSON, "json", false, "print the summary as JSON")
 }
 
 func endpoint(t capture.Target) string {
@@ -188,7 +185,7 @@ func runInfo(e *env, _ *flag.FlagSet, args []string) error {
 			}
 		}
 	}
-	if infoJSON {
+	if e.opt.infoJSON {
 		enc := json.NewEncoder(e.stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(info)
@@ -344,11 +341,8 @@ func verifyOne(e *env, path string) (int, capture.End, string, error) {
 	}
 }
 
-var dumpWall bool
-
-func dumpFlags(fs *flag.FlagSet) {
-	dumpWall = false
-	fs.BoolVar(&dumpWall, "wall", false, "show sample times as wall-clock times instead of offsets")
+func dumpFlags(o *options, fs *flag.FlagSet) {
+	fs.BoolVar(&o.dumpWall, "wall", false, "show sample times as wall-clock times instead of offsets")
 }
 
 func runDump(e *env, _ *flag.FlagSet, args []string) error {
@@ -377,7 +371,7 @@ func runDump(e *env, _ *flag.FlagSet, args []string) error {
 	}
 	_, _ = fmt.Fprintln(w)
 	when := func(at capture.Ticks) string {
-		if dumpWall {
+		if e.opt.dumpWall {
 			return h.Time(at).Format(time.RFC3339Nano)
 		}
 		return fmt.Sprintf("%12d  %14s", at, "+"+h.Duration(at).String())
