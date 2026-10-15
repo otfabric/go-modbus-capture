@@ -123,9 +123,11 @@ consumer associates samples over time (sample and hold); it matters to this repo
 | 20 | Read File Record | request | key is the full sub-request list |
 | 24 | Read FIFO Queue | request | each read is a snapshot of the queue |
 | 43/14 | Read Device Identification | objects | each page stored as received; consumers merge pages into one object set |
-| other | unknown / vendor function | request | stored as opaque PDUs; nothing is dropped |
 
-FC23 (Read/Write Multiple Registers) is excluded because it changes the device.
+FC23 (Read/Write Multiple Registers) is excluded because it changes the device. No other function code is
+supported: vendor, user-defined and unknown function codes are rejected by writers and reported as invalid by
+readers (an error, never a crash), as are the state-changing FC08 sub-functions and FC43 with an MEI type other
+than 14.
 
 "Keyed per address" means the request range and response data split into one value per address, so values
 recorded by different requests combine. "Keyed per request" means the exact request PDU bytes are the key.

@@ -10,8 +10,10 @@ built on top of this library.
 
 **Implemented in `modbusctl` 3.0.0** (`internal/capfile`: recorder; `internal/replay`: replay core and clock;
 `internal/modbus/server.go`: the servers). This file is the design it follows; the modbusctl README and release notes
-document the result. Still open: §1 raw request send for vendor functions, and §2.7 serving FC08, FC17, FC20 and FC24
-(go-modbus has no generic request handler yet). Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
+document the result. §2.7 (serving every read function) is resolved by go-modbus
+[v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0); modbusctl's replay is moving to it. Scope is
+the read functions of the Modbus specification only (`REQUIREMENTS.md` section 6): vendor and unknown function codes
+are neither recorded nor replayed. Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
 
 Everything here reads and writes captures only through `go-modbus-capture` (`capture`, `mbcap`, `jsonl`, `mbcsv`).
 
@@ -32,8 +34,9 @@ Everything here reads and writes captures only through `go-modbus-capture` (`cap
   monotonic reading), plus the caller's context. It also reports exception responses and responses the calling method
   then rejects; the recorder SHOULD check the method's error to decide what to keep. Writes and probes are reported
   too, so the recorder filters for reads.
-- **Raw request send**: go-modbus has no method to send an arbitrary PDU. Recording vendor or unknown read functions
-  (the "other" row of `REQUIREMENTS.md` section 6) needs one; every listed read function already has a typed method.
+- **Typed methods only**: every read function of `REQUIREMENTS.md` section 6 has a typed go-modbus client method, so
+  the recorder needs no raw request send. Vendor and unknown function codes are out of scope: a poll plan with one is
+  refused.
 
 ## 2. Replay semantics
 
@@ -113,10 +116,15 @@ index (`mbcap` reader exposes it).
 
 ### 2.7 Serving every function
 
-The go-modbus server (v1.5.0) dispatches FC01–07, 11, 12, 15, 16, 22, 23, 43 only. FC08, FC17, FC20, FC24 and
-unknown functions are not dispatched. Hosting them needs a **generic raw-PDU handler** in go-modbus (request PDU in,
-response PDU or exception out), or a minimal server of the replayer's own at the cost of duplicating transport code.
-Open: where this lives.
+Resolved in go-modbus [v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0). Up to v1.6.x the server
+dispatched FC01–07, 11, 12, 15, 16, 22, 23 and 43 only, so a replayer could not host FC08, FC17, FC20 or FC24. v1.7.0
+serves them through typed optional handlers: `DiagnosticsHandler`, `ReportServerIDHandler`, `ReadFileRecordHandler`
+and `FIFOQueueHandler`, next to the existing ones for FC07, 11, 12 and 43.
+
+A replayer implements those handlers and answers each request with the data of the recorded response, as recorded,
+never rewritten. FC01–04 go through `RequestHandler`, so the sample-and-hold address timelines of §2 apply to them
+unchanged. Every other function code is answered with Illegal Function by go-modbus: the replayer does not implement
+go-modbus's `RawRequestHandler`, because vendor and unknown functions are out of scope.
 
 ## 3. Tests the replay side needs
 

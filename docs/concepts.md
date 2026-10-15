@@ -76,10 +76,12 @@ one record type covers every read function:
 | FC20 | Read File Record | the records of each sub-request |
 | FC24 | Read FIFO Queue | a snapshot of the queue |
 | FC43/14 | Read Device Identification | one page of identity objects per sample |
-| other | vendor functions | opaque bytes; nothing is dropped |
 
 **Captures hold reads only.** The write functions (FC05, 06, 15, 16, 22, 23) are rejected: recording
-must never change the device.
+must never change the device. So are the FC08 sub-functions that change state (restart, listen-only,
+clear counters), FC43 with an MEI type other than 14, and every function code not in the table above:
+vendor and unknown functions are not supported. A reader reports such a sample as invalid; it never
+crashes on one.
 
 ## Time
 

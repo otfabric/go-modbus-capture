@@ -39,7 +39,7 @@ func functionName(fc uint8) string {
 	if n, ok := functionNames[fc]; ok {
 		return n
 	}
-	return "unknown or vendor function"
+	return "not a Modbus read function"
 }
 
 // Info is the summary info prints, also as JSON.

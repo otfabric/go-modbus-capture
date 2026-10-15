@@ -15,7 +15,8 @@ Record a site once, then test SCADA screens, gateways, historians or analytics a
 you like, without touching the real devices.
 
 - **Every read function**: coils, registers, diagnostics, event logs, file records, FIFO queues, device
-  identification (FC43) and vendor functions, all stored as raw request and response PDUs.
+  identification (FC43), all stored as raw request and response PDUs. Only the read functions of the Modbus
+  specification: vendor and unknown function codes are rejected.
 - **Whole sites in one file**: several devices, each with several acquisition streams, that a consumer can
   untangle or split.
 - **Compact and safe**: about 28 bytes per sample for a typical meter, append-only, checksummed, readable

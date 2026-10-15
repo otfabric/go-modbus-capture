@@ -136,8 +136,8 @@ func Build(data []byte) *capture.Capture {
 			}
 		} else {
 			fc := next()%0x7F + 1
-			if capture.IsWriteFunction(fc) {
-				fc = 0x03
+			if !capture.IsReadFunction(fc) || fc == 0x08 || fc == 0x2B {
+				fc = 0x03 // FC08 and FC43 need a valid sub-function or MEI type
 			}
 			req := []byte{fc}
 			for n := next() % 8; n > 0; n-- {
