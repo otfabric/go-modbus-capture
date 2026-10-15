@@ -10,8 +10,8 @@ built on top of this library.
 
 **Implemented in `modbusctl` 3.0.0** (`internal/capfile`: recorder; `internal/replay`: replay core and clock;
 `internal/modbus/server.go`: the servers). This file is the design it follows; the modbusctl README and release notes
-document the result. Still open: §1 raw request send for vendor functions, and §2.7 serving FC08, FC17, FC20 and FC24
-(go-modbus has no generic request handler yet). Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
+document the result. Since modbusctl 3.1.0 (go-modbus v1.7.0) the servers answer every recorded function (§2.7).
+Still open: §1 raw request send for vendor functions. Words in **MUST**, **SHOULD**, **MAY** follow RFC 2119, as in `REQUIREMENTS.md`.
 
 Everything here reads and writes captures only through `go-modbus-capture` (`capture`, `mbcap`, `jsonl`, `mbcsv`).
 
@@ -113,10 +113,13 @@ index (`mbcap` reader exposes it).
 
 ### 2.7 Serving every function
 
-The go-modbus server (v1.5.0) dispatches FC01–07, 11, 12, 15, 16, 22, 23, 43 only. FC08, FC17, FC20, FC24 and
-unknown functions are not dispatched. Hosting them needs a **generic raw-PDU handler** in go-modbus (request PDU in,
-response PDU or exception out), or a minimal server of the replayer's own at the cost of duplicating transport code.
-Open: where this lives.
+Resolved in go-modbus [v1.7.0](https://github.com/otfabric/go-modbus/releases/tag/v1.7.0)
+([otfabric/go-modbus#3](https://github.com/otfabric/go-modbus/pull/3)): the server dispatches every function code, and
+a `RawRequestHandler` receives the request PDU after the function code and returns the response PDU after it for every
+function the handler does not decode (FC01–06, 15 and 16 never reach it). modbusctl 3.1.0
+([otfabric/modbusctl#2](https://github.com/otfabric/modbusctl/pull/2)) serves FC01–04 per address and FC43/14 per
+object, and answers every other recorded function (FC07, 08, 11, 12, 17, 20, 24, other FC43 MEI types, vendor
+functions) with the response recorded for exactly that request PDU, byte for byte.
 
 ## 3. Tests the replay side needs
 
