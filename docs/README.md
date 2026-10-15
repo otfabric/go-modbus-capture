@@ -29,5 +29,4 @@ Background for contributors; not needed to use the library.
 |---|---|
 | [Requirements](../REQUIREMENTS.md) | goals, non-goals, decisions and phases of the project |
 | [Size model](SIZE-MODEL.md) | how small the binary encoding is, on synthetic data |
-| [MCAP v1 analysis](MCAP-V1-ANALYSIS.md) | the old `modbusctl` format and why MBCAP replaces it |
 | [Capture and replay hand-off](HANDOFF-MODBUSCTL.md) | the recorder and replayer design that lives in `modbusctl` |

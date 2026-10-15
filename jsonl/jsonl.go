@@ -87,6 +87,7 @@ type endJSON struct {
 }
 
 // Writer writes a capture as JSON Lines.
+// It is not safe for concurrent use; separate Writers may run concurrently.
 type Writer struct {
 	w      *bufio.Writer
 	ck     *capture.Checker
@@ -197,6 +198,7 @@ func (w *Writer) Close(end capture.End) error {
 }
 
 // Reader reads a capture from JSON Lines.
+// It is not safe for concurrent use; separate Readers may run concurrently.
 type Reader struct {
 	br    *bufio.Reader
 	h     capture.Header

@@ -4,13 +4,12 @@
 > the format, the library or the CLI, start at the [README](README.md) and the [documentation](docs/README.md).
 
 Status: phases 1–3 implemented; the format is draft 0.1 until it is calibrated on real captures (section 15).
-Written 2026-10-14 from an investigation of the existing MCAP v1 record/replay code in `otfabric/modbusctl`;
+Written 2026-10-14 from an investigation of the existing record/replay code in `otfabric/modbusctl`;
 scope narrowed the same day to the file format and its encodings (see section 3 and decision 12). Companion documents:
 
 - [`docs/README.md`](docs/README.md) — the user documentation (guides, CLI and library reference)
 - [`docs/FORMAT.md`](docs/FORMAT.md) — MBCAP binary, JSON Lines and CSV formats (draft spec)
 - [`docs/HANDOFF-MODBUSCTL.md`](docs/HANDOFF-MODBUSCTL.md) — recorder and replay design, moved out of this repo
-- [`docs/MCAP-V1-ANALYSIS.md`](docs/MCAP-V1-ANALYSIS.md) — what the old format does and why it is being replaced
 - [`docs/SIZE-MODEL.md`](docs/SIZE-MODEL.md) and [`docs/sizemodel/bench.py`](docs/sizemodel/bench.py) — synthetic size estimates
 
 This file is the hand-off for Claude Code. Where it says **MUST**, **SHOULD**, **MAY** it follows RFC 2119.
@@ -32,8 +31,9 @@ GUIs, simulators, digital twins) can build on one shared model and file format.
 - Go module: `github.com/otfabric/go-modbus-capture`
 - Format name: **MBCAP** (Modbus Capture). Extensions: `.mbcap` (binary), `.mbcap.jsonl` (lossless text), `.mbcap.csv` (lossless long CSV)
 - CLI: `mbcapctl`, for capture files only
-- There is **no** need to read or write the old MCAP v1 format (`.mcap`, magic `"MCAP"`). Do not add a v1 reader.
-  (A throwaway script to convert a few v1 files for calibration is fine and stays out of the library.)
+- MBCAP is the **only** capture format: the library reads and writes no other or legacy format, and none is
+  to be added. (A throwaway script that converts a few older recordings for calibration is fine and stays out
+  of the library.)
 
 ## 2. Goals
 
@@ -59,11 +59,11 @@ GUIs, simulators, digital twins) can build on one shared model and file format.
 - Recording or storing **latency**, retries, timeouts, link events or connection state.
 - **Writes** (FC05, 06, 15, 16, 22, 23). Captures hold reads only. The sample record reserves a `kind`
   field so writes can be added later without a format change.
-- Reading MCAP v1.
+- Reading or writing any capture format other than MBCAP and its encodings.
 - **Decoding values.** Interpreting registers (scaling, types, enums, SunSpec or vendor maps, device profiles) is
   deliberately out of scope. The library stores raw words, bits and PDUs. Consumers bring their own decoders.
-  Consequently: no decoded export of any kind and no export to third-party viewers, no port of v1's `decode`, `strings` or
-  `frequencies` commands.
+  Consequently: no decoded export of any kind, no export to third-party viewers, and no decoding commands (such as
+  `decode`, `strings` or `frequencies`).
 - Interpolating or inventing values between samples.
 
 ## 4. Data model
@@ -221,6 +221,15 @@ values, PDUs or the relative times of samples. All of them are thin wrappers ove
 
 - Round-trip tests binary ⇄ JSONL ⇄ long CSV ⇄ binary: model equality, byte-identical PDUs.
 - **Fuzz tests** for every reader (no panics, no unbounded allocation on hostile input; cap lengths).
+- **Chaos tests** for every encoding: valid captures damaged at random (bit flips, inserted, deleted and
+  overwritten bytes, cuts at every block or line boundary, blocks or lines dropped, duplicated and reordered).
+  Readers never panic or hang, errors wrap `ErrCorrupt` or `ErrTruncated`, the samples before the damage come out
+  intact, and `repair` writes a file that verifies and holds only original samples (`make chaos` for long runs).
+- **Parallel tests** under `-race`: writers, readers, converters, edit operations and the `mbcapctl` command
+  function running concurrently on separate data give the same results as one at a time. A single Reader or
+  Writer is not safe for concurrent use, and the documentation says so.
+- An **end-to-end** test of the `mbcapctl` pipeline: convert to every encoding and back byte for byte, split and
+  merge back, filter, trim, inspect; invalid input fails with a clear error and exit code.
 - Golden files in `testdata/` (small, hand-checkable), including: multi-target multi-stream, FC43 paged read,
   every FC in section 6, exception response, truncated file, CRC-corrupted block, unknown block type, change-only capture.
 - Edit operation tests: filter/split/merge/trim preserve PDUs and relative times; provenance tags written; merge
@@ -233,7 +242,7 @@ values, PDUs or the relative times of samples. All of them are thin wrappers ove
 
 | # | Question | Decision | Reason |
 |---|---|---|---|
-| 1 | Names | Format MBCAP, `.mbcap`, own magic, version starts at 1. Repo `go-modbus-capture`, CLI `mbcapctl`. MCAP v1 not supported | `.mcap` is already used by an unrelated, established format; two unrelated formats on one extension confuse file managers and tools |
+| 1 | Names | Format MBCAP, `.mbcap`, own magic, version starts at 1. Repo `go-modbus-capture`, CLI `mbcapctl`. MBCAP is the only capture format | An own name, extension and magic number, so that no tool mistakes a capture for a file of another format |
 | 2 | Container | Custom, purpose-built container | Needs per-sample request templates, delta-coded times and response diff coding; the sketch spends ~4–6 B per sample on framing+timing |
 | 3 | Meaning of a sample's time | Response-received instant, monotonic ticks from capture start; wall-clock start in header | One value suffices for sample-and-hold |
 | 4 | Default tick | 1 µs, selectable to 1 ns | ~2 bytes/sample cheaper than ns; far finer than sampling interval |
@@ -265,23 +274,23 @@ silently deviate.
    `mbcapctl cat|merge|split|filter|trim|repair`.
 4. **Consumers (outside this repo):** implemented in `modbusctl` 3.0.0: `client read`, `scan` and `record` write MBCAP
    through the go-modbus PDU tap; `server static` and `server replay` serve captures with the replay core of the hand-off;
-   the `mcap` commands run on this library. Viewers and GUIs remain.
+   its capture file commands run on this library. Viewers and GUIs remain.
 
 ## 15. Open items
 
 - **Real captures for calibration.** The size numbers in `docs/SIZE-MODEL.md` are from synthetic data.
-  The owner has real v1 captures (e.g. the 192.168.2.201 sample in the `modbusctl` README). Convert a few
-  with a throwaway script, measure, then freeze the DIFF/block-size parameters before declaring the format stable.
+  The owner has real recordings from `modbusctl`'s earlier recorder (e.g. the 192.168.2.201 sample in the
+  `modbusctl` README). Convert a few with a throwaway script, measure, then freeze the DIFF/block-size
+  parameters before declaring the format stable.
 - Confirm decisions 3–6 and 9–10 (section 13) with the owner.
 - The varint/field layouts in `docs/FORMAT.md` and the long CSV columns are implemented and pinned by golden files
   as draft 0.1. Freeze them as 1.0 after calibration: bump `capture.VersionMajor`, regenerate the golden files
   (`make golden`), and drop the draft marker.
 - Relationship to `modbus-simulator` (decision 11).
 
-## 16. Where the old code lives (reference only)
+## 16. Related code (reference only)
 
-`otfabric/modbusctl`: `internal/mcap/` (codec, load, exports), `internal/types/capture.go`,
-`internal/modbus/client.go` (`RecordAndWriteMCAP`, `ScanAndWriteMCAP`), `internal/modbus/server.go`
-(`LoadMCAPAndServeStatic/Replay`), `cmd/client/record.go`, `cmd/server/replay.go`. The record and replay parts are
-for the `modbusctl` migration (hand-off), not for this repo.
+`otfabric/modbusctl`: its recorder and replayer (`cmd/client/record.go`, `cmd/server/replay.go`,
+`internal/modbus/client.go`, `internal/modbus/server.go`) moved onto this library in `modbusctl` 3.0.0
+(section 14 and the hand-off); none of that code belongs in this repo.
 `otfabric/modbus-simulator`: `REQUIREMENTS.md`, `internal/simulator/rawpdu.go`, `trace.go` (raw PDU handling and JSONL traces worth reusing as ideas).

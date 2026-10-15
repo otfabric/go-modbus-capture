@@ -79,6 +79,8 @@ func readDiagnostics(sub uint16) bool {
 //
 // Sample times need not increase: samples of concurrent streams may be
 // written slightly out of order.
+//
+// A Checker is not safe for concurrent use.
 type Checker struct {
 	h       Header
 	targets map[uint32]struct{}

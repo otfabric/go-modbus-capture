@@ -13,7 +13,7 @@ document in the same commit and say why.
 - `mbcapctl` works on capture files only: inspect, verify, convert, cat/merge, split, filter, trim, repair.
   Never add `record`, `scan`, `read`, `serve` or `replay`.
 - Never decode register contents (scaling, types, device profiles). Values stay raw words, bits and PDUs; decoders are out of scope on purpose. No decoded export and no export to third-party viewers.
-- No MCAP v1 support. Do not port `modbusctl/internal/mcap`.
+- MBCAP is the only capture format; do not add readers or writers for other or legacy formats.
 - Captures hold reads only. Never add write capture without an explicit requirement change.
 - Edit operations write new files; they never rewrite recorded PDUs or relative sample times.
 - Writers take sample times as arguments; nothing in the library reads the wall clock for sample times.

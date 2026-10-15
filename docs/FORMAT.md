@@ -93,6 +93,8 @@ block*  type u8 | length varint | payload | crc32c u32
   then an error wrapping `capture.ErrTruncated` (also for a file that ends after a block but has no
   Index and Footer). A bad CRC is an error wrapping `capture.ErrCorrupt`; with `SkipCorrupt` the reader
   skips the block after its claimed length and continues (re-sync is not possible without lengths).
+  In a change-only capture, a sample after a skipped block whose response equals the last one kept is
+  dropped, as a change-only writer drops it: the change between them was lost with the block.
   `mbcap.Repair` / `mbcapctl repair` rewrite such files with a new Index and Footer.
 
 ### 2.2 Block types

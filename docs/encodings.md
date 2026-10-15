@@ -134,8 +134,8 @@ What makes it small:
 - **Per-block deflate** squeezes out the rest.
 
 On a synthetic "typical meter" (registers 60% static, 25% slow counters, 13% walking, 2% noisy), a sample
-of 62 to 120 registers takes about **28 bytes**, against 192 in the old MCAP v1 format
-([size model](SIZE-MODEL.md)).
+of 62 to 120 registers takes about **28 bytes**, against about 170 bytes for its raw request and response
+PDUs ([size model](SIZE-MODEL.md)).
 
 What makes it safe:
 

@@ -22,6 +22,9 @@ var ErrCorrupt = errors.New("capture: corrupt")
 
 // A Reader returns the records of a capture in order. Definitions come before
 // the samples that use them; the End, when the capture has one, comes last.
+//
+// A Reader is not safe for concurrent use by several goroutines. The readers
+// of this module share no state, so separate Readers may run concurrently.
 type Reader interface {
 	// Header returns the capture header.
 	Header() Header
@@ -34,6 +37,11 @@ type Reader interface {
 // for an invalid one. A sample that a change-only capture does not store, or
 // an exception response in a capture without Exceptions, is dropped without
 // error.
+//
+// A Writer is not safe for concurrent use by several goroutines: serialise the
+// calls, for example with a mutex or one goroutine that owns the Writer. The
+// writers of this module share no state, so separate Writers may run
+// concurrently.
 type Writer interface {
 	WriteTarget(t Target) error
 	WriteStream(s Stream) error

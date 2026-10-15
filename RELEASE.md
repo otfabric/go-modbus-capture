@@ -7,7 +7,7 @@
 
 ### Summary
 
-Captures hold the read functions of the Modbus specification and nothing else. v0.0.1 rejected only the write function codes, so it accepted vendor and unknown function codes, which were never in scope.
+Captures hold the read functions of the Modbus specification and nothing else. v0.0.1 rejected only the write function codes, so it accepted vendor and unknown function codes, which were never in scope. The release also adds chaos, parallel and end-to-end tests, fixes the bugs they found, and removes the documentation of the format MBCAP replaced.
 
 ### Changed
 
@@ -16,10 +16,28 @@ Captures hold the read functions of the Modbus specification and nothing else. v
 - Test data: the vendor sample is removed from `testdata/every-fc.*` (regenerated) and from the synthetic captures; tests cover every accepted and rejected case.
 - `docs/HANDOFF-MODBUSCTL.md`: go-modbus v1.7.0 resolves serving FC08, FC17, FC20 and FC24 through typed handlers; no raw request send or raw handler is needed.
 - `make golden` runs the golden test in `mbcap`, where it lives.
+- The documents no longer describe the format MBCAP replaced: `docs/MCAP-V1-ANALYSIS.md` is gone, and `REQUIREMENTS.md`, `CLAUDE.md`, the README, `docs/encodings.md`, `docs/SIZE-MODEL.md` (with `docs/sizemodel/bench.py`) and `docs/HANDOFF-MODBUSCTL.md` compare against raw PDUs or say only that MBCAP is the only capture format.
+- The documentation states that a single Reader, Writer or `capture.Checker` is not safe for concurrent use, and that separate ones, and edit operations on separate captures, share no state.
+
+### Added
+
+- **Chaos tests** (`mbcap`, `jsonl`, `mbcsv`, helpers in `internal/fuzzcap`): valid synthetic captures (extras, change-only, exceptions, unknown end, fuzz-built captures) are damaged at random — bit flips, overwritten, inserted and deleted bytes, cuts at every block or line boundary and at random offsets, blocks or lines dropped, duplicated, swapped, moved and garbled. They check that readers never panic or hang, that errors wrap `ErrCorrupt` or `ErrTruncated` (a cut always `ErrTruncated`), that the samples before the damage come out intact and nothing is made up, and that `mbcap.Repair` writes a file that verifies and holds only original samples. `go test` runs 24 seeds per encoding, `-short` 4; `make chaos` runs `CHAOS_SEEDS` (500) under the race detector (`MBCAP_CHAOS_SEEDS`).
+- **Parallel tests** under `-race`: writers, readers, converters and every edit operation (`internal/format`), and the `mbcapctl` command function with different flags (`cmd/mbcapctl`), running concurrently on separate data give the same bytes as one at a time.
+- **End-to-end CLI test**: a two-target capture converted to JSON Lines and CSV and back (byte-identical binary), split per stream and per target, merged back to the original, filtered, trimmed, and checked with `info`, `verify` and `dump`; a JSON Lines file with a vendor function code fails every command with exit code 1 and a clear message, and leaves no output.
+- `mbcap.Reader.Dropped` and `mbcap.RepairReport.Dropped`.
+
+### Fixed
+
+- **`mbcap.Repair` stopped after a damaged block in a change-only capture** (found by the chaos tests). With the block skipped, the next response could equal the last one kept; the reader reported that as a broken change-only rule and Repair lost every later block. A reader with `SkipCorrupt` now drops such a sample, as a change-only writer would, and Repair keeps the rest (`mbcapctl repair` reports the count).
+- **Long CSV reported a cut file as corrupt** (found by the chaos tests). A last row cut short, with fewer fields than the column names, was `ErrCorrupt` ("wrong number of fields"), as was a cut inside the column names row (which could read as a column named twice). Both are now `ErrTruncated`, as `docs/FORMAT.md` section 4 requires.
+- **`mbcapctl` kept its flags in package variables** (found by the parallel test), so two command lines run in one process raced; they now live in the run's own state.
+- `mbcapctl split` wrote its `--dir` into the `provenance` tag; output directories are now left out, like output file names.
 
 ### Compatibility
 
 A capture with a vendor or unknown function code, a state-changing FC08 sub-function or FC43 with another MEI type, which v0.0.1 accepted, is now invalid. The file layout is unchanged.
+
+A long CSV file cut short is now `ErrTruncated` where v0.0.1 could say `ErrCorrupt`. `mbcap.Repair` and `SkipCorrupt` readers keep more of a damaged change-only capture than before.
 
 ---
 

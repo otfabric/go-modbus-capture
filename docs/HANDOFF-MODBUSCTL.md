@@ -141,5 +141,6 @@ answer presets, stepped clock, loop seam; lookup latency on a 1M-sample capture.
 
 ## 5. Migration in modbusctl
 
-Move `modbusctl` `record`, `scan`, `read`, `server static` and `server replay` onto `go-modbus-capture`. The old
-code is listed in `REQUIREMENTS.md` section 16 of `go-modbus-capture`. MCAP v1 is not carried over.
+Move `modbusctl` `record`, `scan`, `read`, `server static` and `server replay` onto `go-modbus-capture` (done in
+`modbusctl` 3.0.0). The code involved is listed in `REQUIREMENTS.md` section 16 of `go-modbus-capture`. MBCAP is
+the only capture format; no other format is carried over.

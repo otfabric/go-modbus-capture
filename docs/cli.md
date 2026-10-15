@@ -22,9 +22,9 @@ Prebuilt binaries for Linux, macOS and Windows are attached to each
   `--format` says otherwise).
 - **Safe outputs.** Outputs are written to a temporary file next to the destination and renamed into place
   only when the command succeeds. An output that is also an input is refused.
-- **Provenance.** `cat`, `merge`, `split`, `filter` and `trim` add their command and flags (not file names)
-  to the `provenance` header tag, for example `mbcapctl 0.0.1 filter --fc=3 --to=2s`. `convert` and
-  `repair` copy the capture as it is.
+- **Provenance.** `cat`, `merge`, `split`, `filter` and `trim` add their command and flags (not file or
+  directory names) to the `provenance` header tag, for example `mbcapctl 0.0.1 filter --fc=3 --to=2s`.
+  `convert` and `repair` copy the capture as it is.
 - **Flags anywhere.** Flags may come before or after the file arguments.
 - **Times** are offsets from the capture start: a Go duration (`90s`, `1m30s`, `250ms`) or an exact number
   of ticks with a `t` suffix (`1234t`).
@@ -217,9 +217,10 @@ mbcapctl repair IN OUT
 ```
 
 Rewrites a truncated or damaged binary file as a complete one, with a new index and footer. It keeps every
-complete block, skips blocks whose checksum fails, and stops at the point where the file is cut. The end
-is kept if the old index survived, and unknown otherwise. The output is always `.mbcap`; convert it
-afterwards if needed.
+complete block, skips blocks whose checksum fails, and stops at the point where the file is cut. In a
+change-only capture it also drops a sample that, with a skipped block lost, repeats the response before
+it. The end is kept if the old index survived, and unknown otherwise. The output is always `.mbcap`;
+convert it afterwards if needed.
 
 ```
 $ mbcapctl repair crashed.mbcap repaired.mbcap

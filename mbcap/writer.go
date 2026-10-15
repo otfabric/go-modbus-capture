@@ -46,6 +46,10 @@ type Options struct {
 // Writer writes an MBCAP file. It never seeks, so it can write to a pipe.
 // Blocks are written as they fill; Flush ends the current one, so that the
 // file is readable up to there.
+//
+// A Writer is not safe for concurrent use: a recorder that samples from
+// several goroutines serialises its calls (Flush included). Separate Writers
+// share no state and may run concurrently.
 type Writer struct {
 	w      *bufio.Writer
 	off    uint64 // offset of the next byte written

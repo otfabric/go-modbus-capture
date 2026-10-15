@@ -9,6 +9,9 @@
 //
 // Operations take an OpenFunc instead of a Writer, because the header of the
 // result is only known once the operation has derived it.
+//
+// Operations keep no state between calls, so operations on separate captures
+// may run concurrently.
 package edit
 
 import (

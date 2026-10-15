@@ -88,7 +88,7 @@ index at the end:
 magic │ header │ targets │ streams │ request templates │ data block │ data block │ … │ index │ footer
 ```
 
-On a synthetic typical meter that is about 28 bytes per sample, against 192 for the format it replaces.
+On a synthetic typical meter that is about 28 bytes per sample, against about 170 for its raw PDUs.
 A file cut short by a crash reads up to its last complete block. More in
 [Encodings](docs/encodings.md) and the [format specification](docs/FORMAT.md).
 
@@ -183,9 +183,9 @@ See the [release notes](RELEASE.md).
 make check
 ```
 
-`make test` runs the tests with the race detector, `make fuzz` every fuzz target, `make bench` the
-benchmarks, and `make golden` regenerates the derived golden files in `testdata/` from their hand-written
-JSON Lines sources.
+`make test` runs the tests with the race detector, `make fuzz` every fuzz target, `make chaos` the chaos
+tests (damaged captures) with many more seeds, `make bench` the benchmarks, and `make golden` regenerates the
+derived golden files in `testdata/` from their hand-written JSON Lines sources.
 
 ## License
 

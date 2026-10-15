@@ -1,13 +1,12 @@
 """Revised size model (SYNTHETIC data): no latency, one timestamp per sample.
 
-v1: exact layout of modbusctl/internal/mcap/codec.go (26 B per record + data, JSON header).
 MBCAP record = flags(1) + stream(1) + request ref(1) + zigzag varint dt + response coding
             (RAW len+PDU | SAME nothing | DIFF sparse changed 16-bit words).
 Modes: 'full'    = every sample stored (keeps the poll cadence),
        'changes' = a sample identical to the previous sample of the same request is not stored.
 Blocks of 256 records are independently decodable (state reset), deflate applied per block.
 """
-import json, lzma, random, struct, zlib
+import random, struct, zlib
 
 def varint(n):
     out = bytearray()
@@ -31,9 +30,7 @@ def run(mix, changes_only, iterations=3600, seed=1, blk=256):
     for start, cnt in BLOCKS:
         for a in range(start, start + cnt):
             regs[a] = [rng.choices(["static", "slow", "walk", "noisy"], mix)[0], rng.randrange(65536)]
-    hdr = json.dumps({"IP": "192.168.2.201", "Port": 502, "Unit": 21, "Function": 3, "StartTime": 1752498356998694708}).encode()
-    v1 = bytearray(b"MCAP\x01" + struct.pack(">H", len(hdr)) + hdr)
-    blocks_out, cur, prev, n_in_block, t_us, t_prev = [], None, {}, 0, 0, 0
+    blocks_out, cur, prev, n_in_block, t_us, t_prev, raw = [], None, {}, 0, 0, 0, 0
     stored = 0
     for it in range(iterations):
         for a, r in regs.items():
@@ -44,7 +41,7 @@ def run(mix, changes_only, iterations=3600, seed=1, blk=256):
         for bi, (start, cnt) in enumerate(BLOCKS):
             t_us += rng.randint(500, 3000) if bi else 1_000_000 - 120_000 + rng.randint(-5000, 5000)
             data = b"".join(struct.pack(">H", regs[a][1]) for a in range(start, start + cnt))
-            v1 += struct.pack(">IqqHHH", it, t_us * 1000, (t_us + 30000) * 1000, start, cnt, len(data)) + data
+            raw += 5 + 2 + len(data)          # request PDU + response PDU (fc, byte count, data)
             if n_in_block == 0:
                 prev = {}
                 cur = bytearray(); blocks_out.append(cur)
@@ -71,7 +68,7 @@ def run(mix, changes_only, iterations=3600, seed=1, blk=256):
             n_in_block = (n_in_block + 1) % blk
     v2 = b"\x89MBCAP\r\n" + b"\x00" * 60 + b"".join(bytes(b) + b"\x00" * 6 for b in blocks_out)
     perblock = 76 + sum(len(zlib.compress(bytes(b), 9)) + 6 for b in blocks_out)
-    return len(v1), len(zlib.compress(bytes(v1), 9)), len(lzma.compress(bytes(v1))), len(v2), perblock, len(lzma.compress(v2)), stored
+    return raw, len(v2), perblock, stored
 
 polls = 3600 * 3
 mixes = [
@@ -80,8 +77,8 @@ mixes = [
     ("busy (30/20/30/20)", [.30, .20, .30, .20]),
     ("all noisy", [0, 0, 0, 1]),
 ]
-print(f"bytes per sample ({polls} samples); stored = records written in MBCAP")
-print(f"{'scenario':<52}{'v1':>7}{'v1+xz':>7}{'full':>7}{'full+blk':>9}{'chg':>7}{'chg+blk':>9}{'stored(chg)':>13}")
+print(f"bytes per sample ({polls} samples); raw = request and response PDUs; stored = records written in MBCAP")
+print(f"{'scenario':<52}{'raw':>7}{'full':>7}{'full+blk':>9}{'chg':>7}{'chg+blk':>9}{'stored(chg)':>13}")
 for name, mix in mixes:
     a = run(mix, False); b = run(mix, True)
-    print(f"{name:<52}{a[0]/polls:7.1f}{a[2]/polls:7.1f}{a[3]/polls:7.1f}{a[4]/polls:9.1f}{b[3]/polls:7.1f}{b[4]/polls:9.1f}{b[6]:13d}")
+    print(f"{name:<52}{a[0]/polls:7.1f}{a[1]/polls:7.1f}{a[2]/polls:9.1f}{b[1]/polls:7.1f}{b[2]/polls:9.1f}{b[3]:13d}")

@@ -84,7 +84,8 @@ return w.Close(capture.End{Known: true, At: h.Ticks(time.Since(start))})
   the file is readable up to there. For low-latency live capture pass
   `&mbcap.Options{Compression: mbcap.NoCompression}`.
 - **Not concurrent.** A writer is not safe for concurrent use. Serialise calls, for example by funnelling
-  samples from all poll goroutines through one channel.
+  samples from all poll goroutines through one channel. Separate writers share no state and may
+  run in parallel.
 - `jsonl.NewWriter(w, h)` and `mbcsv.NewWriter(w, h)` work the same way, without options.
 
 ## Reading a capture
@@ -132,6 +133,8 @@ for {
 - Readers bound every length and count, and are fuzzed: they are safe on untrusted files.
 - `capture.ReadAll(r)` loads a whole capture into a `*capture.Capture` (header, targets, streams, samples,
   end). It returns what it read so far together with the error.
+- A reader is not safe for concurrent use either; read one file per goroutine. Separate readers, and
+  edit operations on separate captures, share no state and may run in parallel.
 
 ## Errors
 
@@ -207,7 +210,9 @@ stats, err := edit.Filter(r, sel, "my-tool filter", open)
   the data: the capture end and, per data block, its offset, time range and streams.
 - `mbcap.Repair(dst, src, opts)` rewrites a truncated or damaged file with a new index and reports what it
   kept (`RepairReport`).
-- `Reader.SkipCorrupt = true` makes a reader skip blocks with a bad checksum instead of failing.
+- `Reader.SkipCorrupt = true` makes a reader skip blocks with a bad checksum instead of failing. In a
+  change-only capture it then also drops a sample that repeats the response kept before the lost block
+  (`Reader.Dropped`), as a change-only writer would.
 - `mbcap.Options` sets the compression (`Deflate`, `NoCompression`) and the block size (`BlockSamples`,
   `BlockBytes`).
 
