@@ -1,4 +1,4 @@
-.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden
+.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden coverage-check cross
 
 # Prefer module-local dependency resolution when a sibling go.work exists.
 export GOWORK := off
@@ -25,10 +25,24 @@ GO_MOD_VERSION := $(shell sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod | head 
 GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
 
 # Fuzz targets and the time each gets in `make fuzz`.
+# Same minimum as coverage-min in ci.yml.
+COVER_MIN := 90
 FUZZ_TIME ?= 30s
 FUZZ_TARGETS = ./mbcap:FuzzReader ./mbcap:FuzzRoundTrip ./jsonl:FuzzReader ./mbcsv:FuzzReader
 
 all: check build ## Run checks and build bin/mbcapctl
+
+coverage-check: coverage ## Fail when total coverage is below COVER_MIN
+	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
+	awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% < %s%%\n", t, m; exit 1 } else printf "coverage %.1f%% >= %s%%\n", t, m }'
+
+CROSS_PLATFORMS := linux/amd64 linux/arm64 linux/arm darwin/arm64 windows/amd64
+
+cross: ## Cross-compile without cgo for the supported platforms
+	@for p in $(CROSS_PLATFORMS); do \
+		echo "Building for $$p"; \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build ./... || exit 1; \
+	done
 
 check: fmt fmt-check lint lint-ci vet vuln test ## Format, lint, vet, vuln, and test
 
