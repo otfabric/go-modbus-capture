@@ -16,7 +16,7 @@ jobs:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0
     with:
       run-govulncheck: true
-      coverage-min: "80"
+      coverage-min: "90"
       fuzz-time: 10s
       test-exclude-regex: "/example(s)?($|/)"
       codecov-name: go-modbus-capture
