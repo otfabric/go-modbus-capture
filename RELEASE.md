@@ -1,5 +1,16 @@
 # go-modbus-capture Releases
 
+## v0.0.3
+
+**Date:** 2026-10-31
+**Previous release:** v0.0.2
+
+### Changed
+
+- Policy 1.2: build output in `bin/` and `release/`, a per-package coverage floor, and more tests and CI. No change in behaviour.
+
+---
+
 ## v0.0.2
 
 **Date:** 2026-10-15
