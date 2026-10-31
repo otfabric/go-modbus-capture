@@ -1,4 +1,4 @@
-.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden coverage-check cross
+.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden coverage-check cross e2e interop coverage-pkg-check
 
 # Prefer module-local dependency resolution when a sibling go.work exists.
 export GOWORK := off
@@ -27,6 +27,8 @@ GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
 # Fuzz targets and the time each gets in `make fuzz`.
 # Same minimum as coverage-min in ci.yml.
 COVER_MIN := 90
+# Per-package floor (TEST-012): what the weakest package measures now, rounded down.
+COVER_PKG_MIN := 90
 FUZZ_TIME ?= 30s
 FUZZ_TARGETS = ./mbcap:FuzzReader ./mbcap:FuzzRoundTrip ./jsonl:FuzzReader ./mbcsv:FuzzReader
 
@@ -44,7 +46,12 @@ cross: ## Cross-compile without cgo for the supported platforms
 		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build ./... || exit 1; \
 	done
 
-check: fmt fmt-check lint lint-ci vet vuln test ## Format, lint, vet, vuln, and test
+coverage-pkg-check: coverage ## Fail when a package is below COVER_PKG_MIN
+	@awk -v m="$(COVER_PKG_MIN)" 'NR > 1 { n[$$1] = $$2; if ($$3 > 0) h[$$1] = 1 } \
+	END { for (k in n) { p = k; sub(/\/[^\/]*$$/, "", p); s[p] += n[k]; if (k in h) c[p] += n[k] } \
+	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
+
+check: fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check ## Format, lint, vet, vuln, and test
 
 test: ## Run unit tests (race detector)
 	@echo "Running go test -race ./..."
@@ -63,6 +70,13 @@ fuzz: ## Run every fuzz target for FUZZ_TIME
 		echo "Fuzzing $$name in $$pkg for $(FUZZ_TIME)"; \
 		go test -run '^$$' -fuzz "^$$name$$" -fuzztime $(FUZZ_TIME) $$pkg || exit 1; \
 	done
+
+e2e: ## Run the built mbcapctl over real files; the library reads what it wrote
+	@go test -count=1 -race ./e2e/...
+
+interop: ## No suite: no independent MBCAP implementation exists, so this fails rather than report a pass (see INTEROPERABILITY.md)
+	@echo "no independent MBCAP implementation exists; see INTEROPERABILITY.md"
+	@exit 1
 
 bench: ## Run benchmarks
 	@go test -run '^$$' -bench . -benchmem ./...
