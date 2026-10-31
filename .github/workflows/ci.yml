@@ -22,3 +22,14 @@ jobs:
       codecov-name: go-modbus-capture
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
     secrets: inherit
+
+  # The per-package coverage floor (TEST-012).
+  coverage-packages:
+    name: Per-package coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make coverage-pkg-check

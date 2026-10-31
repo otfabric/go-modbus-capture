@@ -1,0 +1,14 @@
+# Recorded exceptions to otfabric/engineering rules (docs/exceptions/ there).
+exceptions:
+  - rule: TEST-009
+    scope: repository
+    justification: >-
+      MBCAP is an OT Fabric file format, and no independent implementation of
+      it exists to read or write files against (INTEROPERABILITY.md). The
+      Modbus PDUs inside a capture are opaque bytes here, so the Modbus
+      reference stacks of modbus-interop exercise nothing in this module. A
+      second reader written by us would not be independent evidence.
+    owner: bartvanbos
+    reviewed: "2026-10-31"
+    reconsider: "when a third party implements MBCAP; a suite would then read and write its files"
+    ref: INTEROPERABILITY.md

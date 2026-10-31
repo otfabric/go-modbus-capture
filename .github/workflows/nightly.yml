@@ -1,0 +1,37 @@
+# Extended tier (otfabric/engineering standards/testing.md#ci-tiers): long
+# fuzzing. This module holds no chaos or soak tier: it is offline code without
+# connections or timers. A fuzz failure leaves its input in the artifact:
+# commit it with the fix.
+name: Nightly
+run-name: "Nightly on ${{ github.ref_name }}"
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzz-time:
+        description: Time per fuzz target
+        required: false
+        default: 5m
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      # Stable, as in go-ci: Go 1.26's fuzz coordinator has a race.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: make fuzz FUZZ_TIME=${{ inputs.fuzz-time || '5m' }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-corpus-nightly
+          path: "**/testdata/fuzz/"
