@@ -14,3 +14,10 @@ cover.*
 
 # Fuzz cache written by go test -fuzz outside testdata
 /fuzz/
+
+# Build artefacts live in /bin/ and /release/ (otfabric/engineering REPO-005)
+*.test
+coverage.out
+
+# Output of a bare `go build`, anchored so it can never hide a source folder
+/cmd/mbcapctl/mbcapctl
