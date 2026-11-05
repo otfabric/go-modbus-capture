@@ -314,8 +314,7 @@ func (r *Reader) csvErr(err error) error {
 	if errors.Is(err, errRecordTooLong) {
 		return fmt.Errorf("mbcsv: %w: a row is longer than %d bytes", capture.ErrCorrupt, MaxRecordLen)
 	}
-	var pe *csv.ParseError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*csv.ParseError](err); ok {
 		if errors.Is(pe.Err, csv.ErrQuote) && r.budget.eof {
 			return fmt.Errorf("mbcsv: line %d: %w: input ends inside a quoted field", pe.Line, capture.ErrTruncated)
 		}
@@ -438,7 +437,7 @@ func (r *Reader) decodeHeader(row []string) (capture.Header, error) {
 		}
 	}
 	if f := p.str(colFlags); f != "" && p.err == nil {
-		for _, name := range strings.Split(f, ";") {
+		for name := range strings.SplitSeq(f, ";") {
 			switch name {
 			case flagChangeOnly:
 				h.ChangeOnly = true

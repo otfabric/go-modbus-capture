@@ -8,7 +8,7 @@ None of this is a conformance claim: nothing is certified, and MBCAP is not a st
 
 | go-modbus-capture | Go | Format | Supported |
 |---|---|---|---|
-| **v0.0.2** | 1.23 or later (CI: 1.23 to 1.26) | draft 0.1 | **yes** |
+| **v0.1.0** | 1.26 or later (CI: 1.26 and 1.27) | draft 0.1 | **yes** |
 
 ## 2. Platforms
 

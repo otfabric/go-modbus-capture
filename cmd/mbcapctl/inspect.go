@@ -11,7 +11,6 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -176,7 +175,7 @@ func runInfo(e *env, _ *flag.FlagSet, args []string) error {
 	for _, si := range info.Streams {
 		si.Requests = len(si.lastAt)
 		if n := len(si.intervals); n > 0 {
-			sort.Slice(si.intervals, func(i, j int) bool { return si.intervals[i] < si.intervals[j] })
+			slices.Sort(si.intervals)
 			m := si.intervals[n/2]
 			si.Cadence = &m
 		}

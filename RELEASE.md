@@ -1,5 +1,16 @@
 # go-modbus-capture Releases
 
+## v0.1.0
+
+**Date:** 2026-11-05
+**Previous release:** v0.0.3
+
+### Changed
+
+- Go 1.26 or later is required (was 1.23); CI runs Go 1.26 and 1.27. `go fix` modernised the code; no change in behaviour or API.
+
+---
+
 ## v0.0.3
 
 **Date:** 2026-10-31

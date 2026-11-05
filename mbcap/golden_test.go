@@ -302,7 +302,7 @@ func TestEveryTruncation(t *testing.T) {
 	c, _ := readJSONL(t, filepath.Join(testdata, "multi-target.mbcap.jsonl"))
 	for _, opts := range []*Options{{Compression: NoCompression, BlockSamples: 3}, nil} {
 		good := encode(t, c, opts)
-		for n := 0; n < len(good); n++ {
+		for n := range good {
 			r, err := NewReader(bytes.NewReader(good[:n]))
 			if err == nil {
 				_, err = capture.ReadAll(r)

@@ -61,7 +61,6 @@ func TestWriteDispatch(t *testing.T) {
 }
 
 type failingWriter struct {
-	memWriter
 	target, stream, sample, end error
 }
 

@@ -5,7 +5,7 @@ Read [AGENTS.md](AGENTS.md) first: it lists the scope and the ground rules.
 
 ## Development setup
 
-- Go 1.23+ (see [go.mod](go.mod))
+- Go 1.26+ (see [go.mod](go.mod))
 - [staticcheck](https://staticcheck.dev/), [golangci-lint](https://golangci-lint.run/) and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for the checks
 - No hardware and no network: the tests read files in `testdata/` and generate captures
 

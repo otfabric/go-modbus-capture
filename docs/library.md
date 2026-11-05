@@ -4,7 +4,7 @@
 go get github.com/otfabric/go-modbus-capture
 ```
 
-Standard library only; Go 1.23 or later. API reference:
+Standard library only; Go 1.26 or later. API reference:
 [pkg.go.dev/github.com/otfabric/go-modbus-capture](https://pkg.go.dev/github.com/otfabric/go-modbus-capture).
 
 | Package | Use it to |

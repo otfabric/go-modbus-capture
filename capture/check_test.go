@@ -31,7 +31,7 @@ func TestCheckHeader(t *testing.T) {
 		{"long string", func(h *Header) { h.Producer = strings.Repeat("x", MaxStringLen+1) }, false},
 		{"tag bytes", func(h *Header) {
 			h.Tags = map[string]string{}
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				h.Tags[strings.Repeat("k", i+1)] = strings.Repeat("v", 60000)
 			}
 		}, false},
@@ -196,7 +196,7 @@ func TestCheckPDUsReadFunctionsOnly(t *testing.T) {
 			t.Errorf("% x accepted (%v)", req, err)
 		}
 	}
-	for fc := 0; fc < 256; fc++ {
+	for fc := range 256 {
 		if IsReadFunction(uint8(fc)) && IsWriteFunction(uint8(fc)) {
 			t.Errorf("0x%02x is both a read and a write function", fc)
 		}

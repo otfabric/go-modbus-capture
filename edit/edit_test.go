@@ -55,8 +55,6 @@ func reader(t *testing.T, c *capture.Capture) capture.Reader {
 	return r
 }
 
-func ticks(v capture.Ticks) *capture.Ticks { return &v }
-
 func extras() *capture.Capture {
 	return synth.Generate(synth.Config{Seed: 7, Polls: 30, Mix: synth.Busy, Extras: true})
 }
@@ -99,7 +97,7 @@ func TestFilter(t *testing.T) {
 		{"one target", Selection{Targets: []uint32{2}}, func(s capture.Sample) bool { return targetOf[s.Stream] == 2 }, []uint32{2}, []uint32{2, 3}, nil},
 		{"one stream defines only its target", Selection{Streams: []uint32{3}}, func(s capture.Sample) bool { return s.Stream == 3 }, []uint32{2}, []uint32{3}, nil},
 		{"function codes", Selection{Functions: []uint8{0x03, 0x2B}}, func(s capture.Sample) bool { return s.Function() == 0x03 || s.Function() == 0x2B }, []uint32{1, 2}, []uint32{1, 2, 3}, nil},
-		{"time window", Selection{From: ticks(5_000_000), To: ticks(9_000_000)}, func(s capture.Sample) bool { return s.At >= 5_000_000 && s.At < 9_000_000 }, []uint32{1, 2}, []uint32{1, 2, 3}, ticks(9_000_000)},
+		{"time window", Selection{From: new(capture.Ticks(5_000_000)), To: new(capture.Ticks(9_000_000))}, func(s capture.Sample) bool { return s.At >= 5_000_000 && s.At < 9_000_000 }, []uint32{1, 2}, []uint32{1, 2, 3}, new(capture.Ticks(9_000_000))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &mem{t: t}
@@ -141,7 +139,7 @@ func TestFilter(t *testing.T) {
 			}
 		})
 	}
-	if _, err := Filter(reader(t, src), Selection{From: ticks(5), To: ticks(4)}, "", (&mem{t: t}).open); err == nil {
+	if _, err := Filter(reader(t, src), Selection{From: new(capture.Ticks(5)), To: new(capture.Ticks(4))}, "", (&mem{t: t}).open); err == nil {
 		t.Error("an inverted window was accepted")
 	}
 }

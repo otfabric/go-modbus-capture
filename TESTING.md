@@ -6,7 +6,7 @@ Tests need no hardware, network or privileges.
 
 | Tier | Command | In CI |
 |---|---|---|
-| Unit, golden files | `make test` | yes, Go 1.23 to 1.26, with `-race` |
+| Unit, golden files | `make test` | yes, Go 1.26 and 1.27, with `-race` |
 | End-to-end | `make e2e` | yes, as part of the package tests |
 | Fuzz | `make fuzz` (`FUZZ_TIME`, default 30s) | yes, 10s per target; nightly, 5 minutes per target |
 | Benchmarks | `make bench` | no |
