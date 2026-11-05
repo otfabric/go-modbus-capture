@@ -252,7 +252,7 @@ func TestSplitNames(t *testing.T) {
 	if !strings.Contains(r.stdout, ".mbcap.jsonl") {
 		t.Fatalf("split: %s", r.stdout)
 	}
-	for _, p := range strings.Fields(r.stdout) {
+	for p := range strings.FieldsSeq(r.stdout) {
 		load(t, p)
 	}
 }

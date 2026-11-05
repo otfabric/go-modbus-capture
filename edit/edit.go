@@ -16,6 +16,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/otfabric/go-modbus-capture/capture"
 )
@@ -423,12 +424,12 @@ func gcd(a, b uint64) uint64 {
 }
 
 func joinNames(names []string) string {
-	s := ""
+	var s strings.Builder
 	for i, n := range names {
 		if i > 0 {
-			s += ", "
+			s.WriteString(", ")
 		}
-		s += n
+		s.WriteString(n)
 	}
-	return s
+	return s.String()
 }

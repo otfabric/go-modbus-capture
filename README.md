@@ -1,6 +1,6 @@
 # go-modbus-capture
 
-[![Go Version](https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-modbus-capture.svg)](https://pkg.go.dev/github.com/otfabric/go-modbus-capture)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI Status](https://github.com/otfabric/go-modbus-capture/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-modbus-capture/actions/workflows/ci.yml)
@@ -156,7 +156,7 @@ Write one with `mbcap.NewWriter`, convert with `capture.Copy`, edit with the `ed
 | `edit` | filter, trim, split and merge, each writing a new capture with provenance |
 | `cmd/mbcapctl` | the CLI |
 
-Standard library only, no dependencies; Go 1.23 or later. Every reader checks every rule and is fuzzed
+Standard library only, no dependencies; Go 1.26 or later. Every reader checks every rule and is fuzzed
 against hostile input.
 
 ## Status

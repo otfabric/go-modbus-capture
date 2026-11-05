@@ -240,7 +240,7 @@ func (l *listFlag) String() string {
 }
 
 func (l *listFlag) Set(s string) error {
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue

@@ -369,7 +369,7 @@ func (r *Reader) decodeBody(body []byte) ([]capture.Sample, blockInfo, error) {
 	streams := map[uint32]struct{}{}
 	at := base
 	info := blockInfo{first: ^uint64(0)}
-	for i := uint64(0); i < count; i++ {
+	for i := range count {
 		flags := d.u8()
 		if flags&^flagKnownMask != 0 {
 			d.fail("sample %d: unknown flags 0x%02x (reserved bits or sample kind)", i, flags)
