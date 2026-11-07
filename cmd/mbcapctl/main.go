@@ -14,15 +14,20 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/otfabric/go-modbus-capture/internal/buildinfo"
 )
 
-// Set by the linker (see Makefile).
+// Set by the linker (see Makefile and the release workflow); empty when not
+// injected, see internal/buildinfo for the fallbacks.
 var (
-	version   = "0.0.0-dev"
+	version   = ""
 	tag       = ""
-	commit    = "unknown"
-	buildDate = "unknown"
+	commit    = ""
+	buildDate = ""
 )
+
+func buildInfo() buildinfo.Info { return buildinfo.Get("mbcapctl", version, tag, commit, buildDate) }
 
 // Exit codes.
 const (
@@ -37,6 +42,9 @@ type command struct {
 	summary string
 	run     func(e *env, fs *flag.FlagSet, args []string) error
 	flags   func(fs *flag.FlagSet)
+	// values is the fixed set of the positional argument, if it has one.
+	// Otherwise args naming FILE, IN or OUT complete capture files.
+	values []string
 }
 
 func commands() []*command {
@@ -52,7 +60,8 @@ func commands() []*command {
 		{name: "filter", args: "IN OUT", summary: "Keep a time window, targets, streams and/or function codes", run: runFilter, flags: filterFlags},
 		{name: "trim", args: "IN OUT", summary: "Cut to a time window and rebase it to start at 0", run: runTrim, flags: trimFlags},
 		{name: "repair", args: "IN OUT", summary: "Rewrite a truncated or damaged mbcap file with a new index", run: runRepair, flags: outputFlags},
-		{name: "version", summary: "Print the version", run: runVersion},
+		{name: "version", summary: "Print the version", run: runVersion, flags: versionFlags},
+		{name: "completion", args: strings.Join(shells, "|"), summary: "Print a shell completion script", run: runCompletion, values: shells},
 	}
 }
 
@@ -178,7 +187,7 @@ func provenanceStep(name string, fs *flag.FlagSet) string {
 		parts = append(parts, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
 	})
 	sort.Strings(parts)
-	step := "mbcapctl " + version + " " + name
+	step := "mbcapctl " + buildInfo().Version + " " + name
 	if len(parts) > 0 {
 		step += " " + strings.Join(parts, " ")
 	}
@@ -194,7 +203,7 @@ Usage: mbcapctl COMMAND [flags] ARGS
 Commands:
 `)
 	for _, c := range commands() {
-		_, _ = fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
+		_, _ = fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
 	}
 	_, _ = fmt.Fprintf(w, `
 Files are read in any encoding (detected from their content); "-" is standard
@@ -203,17 +212,22 @@ Run "mbcapctl COMMAND -h" for the flags of a command.
 `)
 }
 
+var versionJSON bool
+
+func versionFlags(fs *flag.FlagSet) {
+	versionJSON = false
+	fs.BoolVar(&versionJSON, "json", false, "print the version as one line of JSON")
+}
+
 func runVersion(e *env, _ *flag.FlagSet, args []string) error {
 	if len(args) != 0 {
 		return usageErr("version takes no arguments")
 	}
-	_, _ = fmt.Fprintf(e.stdout, "mbcapctl %s (tag %s, commit %s, built %s)\n", version, orNone(tag), commit, buildDate)
-	return nil
-}
-
-func orNone(s string) string {
-	if s == "" {
-		return "none"
+	i := buildInfo()
+	if versionJSON {
+		_, _ = fmt.Fprintln(e.stdout, i.JSON())
+	} else {
+		_, _ = fmt.Fprintln(e.stdout, i.String())
 	}
-	return s
+	return nil
 }

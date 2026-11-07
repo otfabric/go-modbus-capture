@@ -132,8 +132,9 @@ var outOpts outputOptions
 
 func outputFlags(fs *flag.FlagSet) {
 	outOpts = outputOptions{}
-	fs.StringVar(&outOpts.format, "format", "", "output encoding: mbcap, jsonl, csv or wide-csv (default: from the output file extension)")
-	fs.StringVar(&outOpts.compression, "compression", "deflate", "mbcap data block compression: deflate or none")
+	choiceVar(fs, &outOpts.format, "format", "", "output encoding: mbcap, jsonl, csv or wide-csv (default: from the output file extension)",
+		"mbcap", "jsonl", "csv", "wide-csv")
+	choiceVar(fs, &outOpts.compression, "compression", "deflate", "mbcap data block compression: deflate or none", "deflate", "none")
 	fs.IntVar(&outOpts.blockSize, "block-samples", mbcap.DefaultBlockSamples, "mbcap samples per data block")
 }
 

@@ -45,6 +45,8 @@ func TestUsageErrors(t *testing.T) {
 		{"verify arguments", []string{"verify"}, "one or more"},
 		{"dump arguments", []string{"dump"}, "one file"},
 		{"version arguments", []string{"version", "x"}, "no arguments"},
+		{"completion arguments", []string{"completion"}, "one shell"},
+		{"completion shell", []string{"completion", "tcsh"}, "unknown shell"},
 		{"split arguments", []string{"split"}, "one input"},
 		{"split key", []string{"split", "--by", "colour", in}, "--by must be"},
 		{"filter arguments", []string{"filter", in}, "an input and an output"},
@@ -272,8 +274,8 @@ func TestHelpers(t *testing.T) {
 	if got := endpoint(capture.Target{Transport: capture.TransportUDP}); got != "udp" {
 		t.Fatalf("endpoint: %q", got)
 	}
-	if orDash("") != "-" || orDash("x") != "x" || orNone("") != "none" || orNone("x") != "x" {
-		t.Fatal("orDash, orNone")
+	if orDash("") != "-" || orDash("x") != "x" {
+		t.Fatal("orDash")
 	}
 }
 
