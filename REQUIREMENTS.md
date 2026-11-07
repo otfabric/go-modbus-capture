@@ -246,7 +246,7 @@ values, PDUs or the relative times of samples. All of them are thin wrappers ove
 | 13 | Text formats | JSON Lines (canonical) and long CSV are both lossless and importable; wide CSV is a one-way view | Owner's direction, 2026-10-14: export/import to text-based formats |
 | 14 | Draft version | Files carry format version 0.1 until the format is frozen as 1.0; 1.0 readers will not read 0.x | Calibration may still change the binary coding; draft files must not pass for frozen ones |
 | 15 | Carriage returns | Strings in a capture hold no CR (U+000D) | RFC 4180 readers, `encoding/csv` included, turn CR LF inside a quoted field into LF: long CSV could not be lossless otherwise |
-| 16 | CLI library | `mbcapctl` uses the standard `flag` package, not cobra | Keeps the module free of dependencies for the GUIs and viewers that import it |
+| 16 | CLI library | `mbcapctl` uses the standard `flag` package, not cobra. Shell completion (bash, zsh, fish, PowerShell) comes without cobra: `mbcapctl completion` generates the scripts from the command table and the flags each command registers; flags with a fixed set of values are declared with `choiceVar`, file and directory flags with `pathVar` and `dirVar`, so a new flag completes without touching the generator | Keeps the module free of dependencies for the GUIs and viewers that import it; the generator is a few hundred lines of standard library, smaller than the dependency it avoids |
 
 Decisions 7 and 8 (unrecorded requests, before first sample) were replay decisions; they moved to the hand-off
 as R2 and R3. Numbers are kept so references stay valid.

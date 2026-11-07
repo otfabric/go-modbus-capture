@@ -1,5 +1,22 @@
 # go-modbus-capture Releases
 
+## v0.2.0
+
+**Date:** unreleased
+**Previous release:** v0.1.0
+
+### Added
+
+- `mbcapctl version --json`: the version as one line of JSON (`name`, `version`, `tag`, `commit`, `built`, `libraries`, `go`, `platform`).
+- `mbcapctl completion bash|zsh|fish|powershell`: shell completion for commands, flags, the values of `--format`, `--compression` and `--by`, and capture files (`.mbcap`, `.jsonl`, `.csv`) for file arguments and `-o`. Generated with the standard library from the command table; no new dependency (REQUIREMENTS.md decision 16).
+
+### Changed
+
+- `mbcapctl version` prints the aligned OT Fabric line, `mbcapctl 0.2.0 (tag v0.2.0, commit <full sha>, built <date>, go1.26.x, linux/amd64)`; the tag is left out when there is none (it used to print `tag none`). A build that is not a release (`go build`, `go run`, pseudo-versions) reports `dev` and the commit from the Go build information, with `-dirty` for uncommitted changes; `go install ...@vX.Y.Z` reports X.Y.Z. The provenance tag uses the same version.
+- `make build` injects the version and tag only when HEAD is exactly on a tag, and the full commit SHA.
+
+---
+
 ## v0.1.0
 
 **Date:** 2026-11-05

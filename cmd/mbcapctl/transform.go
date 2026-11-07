@@ -96,7 +96,7 @@ var mergeOut string
 func mergeFlags(fs *flag.FlagSet) {
 	outputFlags(fs)
 	mergeOut = ""
-	fs.StringVar(&mergeOut, "o", "", "output file (required)")
+	pathVar(fs, &mergeOut, "o", "", "output file (required)", captureExts...)
 }
 
 func runCat(e *env, _ *flag.FlagSet, args []string) error {
@@ -135,8 +135,8 @@ var (
 func splitFlags(fs *flag.FlagSet) {
 	outputFlags(fs)
 	splitBy, splitDir = "", ""
-	fs.StringVar(&splitBy, "by", "", "split per target, stream or fc (required)")
-	fs.StringVar(&splitDir, "dir", ".", "directory for the parts")
+	choiceVar(fs, &splitBy, "by", "", "split per target, stream or fc (required)", "target", "stream", "fc")
+	dirVar(fs, &splitDir, "dir", ".", "directory for the parts")
 }
 
 func runSplit(e *env, _ *flag.FlagSet, args []string) error {

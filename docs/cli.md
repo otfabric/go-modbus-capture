@@ -225,7 +225,25 @@ repaired.mbcap: kept 4 samples, input was truncated, capture end unknown
 ## version
 
 ```
-mbcapctl version
+mbcapctl version [--json]
 ```
 
-Prints the version, tag, commit and build date.
+Prints one line: the version, tag (left out when the build has none), commit, build date, Go version and
+platform. `--json` prints the same as one line of JSON, with the keys `name`, `version`, `tag`, `commit`,
+`built`, `libraries`, `go` and `platform`. A build that is not a release (`go build`, `go run`) is `dev`;
+`go install ...@vX.Y.Z` reports X.Y.Z.
+
+```
+$ mbcapctl version
+mbcapctl 0.2.0 (tag v0.2.0, commit 1802d0f9afe8642d1e278120b76fcdfac967cb9e, built 2026-11-05T15:41:49Z, go1.26.10, linux/amd64)
+$ mbcapctl version --json
+{"name":"mbcapctl","version":"0.2.0","tag":"v0.2.0","commit":"1802d0f9afe8642d1e278120b76fcdfac967cb9e","built":"2026-11-05T15:41:49Z","libraries":[],"go":"go1.26.10","platform":"linux/amd64"}
+```
+
+## completion
+
+```
+mbcapctl completion bash|zsh|fish|powershell
+```
+
+Prints a shell completion script. How to install it: [Shell completion](../README.md#shell-completion).

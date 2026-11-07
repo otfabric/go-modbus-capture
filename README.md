@@ -106,6 +106,28 @@ Linux (amd64, arm64, armv7), macOS (Intel, Apple silicon) and Windows (amd64, ar
 
 From source (Go 1.26+): `go install github.com/otfabric/go-modbus-capture/cmd/mbcapctl@latest`
 
+### Shell completion
+
+Commands, flags, the values of `--format`, `--compression`, `--by` and `completion`, and capture files complete.
+
+```bash
+# bash (needs the bash-completion package)
+mkdir -p ~/.local/share/bash-completion/completions
+mbcapctl completion bash > ~/.local/share/bash-completion/completions/mbcapctl
+
+# zsh: a directory on your fpath, then restart the shell
+mkdir -p ~/.zsh/completions && mbcapctl completion zsh > ~/.zsh/completions/_mbcapctl
+# and once in ~/.zshrc:  fpath=(~/.zsh/completions $fpath); autoload -U compinit && compinit
+
+# fish
+mkdir -p ~/.config/fish/completions && mbcapctl completion fish > ~/.config/fish/completions/mbcapctl.fish
+```
+
+```powershell
+# PowerShell: add this line to your profile ($PROFILE)
+mbcapctl completion powershell | Out-String | Invoke-Expression
+```
+
 ## Quick start
 
 Look inside a capture:
