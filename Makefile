@@ -1,4 +1,4 @@
-.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden coverage-check cross e2e interop coverage-pkg-check
+.PHONY: help all test coverage cover lint lint-ci vuln fmt fmt-check vet fuzz bench build check clean golden coverage-check cross e2e interop coverage-pkg-check docs-check
 
 # Prefer module-local dependency resolution when a sibling go.work exists.
 export GOWORK := off
@@ -23,6 +23,9 @@ LDFLAGS := -ldflags "-s -w -X 'main.version=$(VERSION)' -X 'main.tag=$(TAG)' -X 
 # CI formats with the Go version from go.mod; gofmt output can differ between releases.
 GO_MOD_VERSION := $(shell sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod | head -n1)
 GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
+
+# docsync release of docs-check (DOC-008).
+DOCSYNC_VERSION := v0.2.0
 
 # Fuzz targets and the time each gets in `make fuzz`.
 # Same minimum as coverage-min in ci.yml.
@@ -51,7 +54,7 @@ coverage-pkg-check: coverage ## Fail when a package is below COVER_PKG_MIN
 	END { for (k in n) { p = k; sub(/\/[^\/]*$$/, "", p); s[p] += n[k]; if (k in h) c[p] += n[k] } \
 	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
 
-check: fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check ## Format, lint, vet, vuln, and test
+check: fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check docs-check ## Format, lint, vet, vuln, and test
 
 test: ## Run unit tests (race detector)
 	@echo "Running go test -race ./..."
@@ -112,3 +115,7 @@ build: ## Build $(BINARY)
 
 clean: ## Remove bin/ and coverage.out
 	@rm -rf $(BIN_DIR) coverage.out
+
+# The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
+docs-check: ## Check that the documents agree with the code (docsync)
+	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
