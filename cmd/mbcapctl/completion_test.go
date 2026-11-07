@@ -274,7 +274,7 @@ func TestPowerShellCompletion(t *testing.T) {
 	prog := `$p = ` + psq(script) + `; $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($p, [ref]$null, [ref]$errs); ` +
 		`if ($errs.Count) { $errs | ForEach-Object { $_.ToString() }; exit 1 }; . $p; ` +
 		`foreach ($in in @(` + strings.Join(inputs, ", ") + `)) { $r = TabExpansion2 -inputScript $in -cursorColumn $in.Length; ` +
-		`$in + ' => ' + ($r.CompletionMatches.CompletionText -join ' ') }`
+		`$in + ' => [' + ($r.CompletionMatches.CompletionText -join ' ') + ']' }`
 	cmd := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command", prog)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	cmd.Dir = t.TempDir()
@@ -284,11 +284,12 @@ func TestPowerShellCompletion(t *testing.T) {
 	}
 	got := map[string]string{}
 	for l := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-		in, res, ok := strings.Cut(strings.TrimRight(l, "\r"), " => ")
-		if !ok {
+		in, res, ok := strings.Cut(strings.TrimRight(l, "\r"), " => [")
+		res, closed := strings.CutSuffix(res, "]")
+		if !ok || !closed {
 			t.Fatalf("pwsh output: %s", out)
 		}
-		got[in] = strings.TrimSpace(res)
+		got[in] = res
 	}
 	for in, want := range cases {
 		if got[in] != want {
