@@ -1,5 +1,16 @@
 # go-modbus-capture Releases
 
+## v0.2.1
+
+**Date:** 2026-11-08
+**Previous release:** v0.2.0
+
+### Changed
+
+- `mbcapctl` is built with the latest Go 1.26 patch release; v0.2.0 was built with go1.26.0.
+
+---
+
 ## v0.2.0
 
 **Date:** 2026-11-07
