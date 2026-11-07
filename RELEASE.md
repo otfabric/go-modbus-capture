@@ -2,7 +2,7 @@
 
 ## v0.2.0
 
-**Date:** unreleased
+**Date:** 2026-11-07
 **Previous release:** v0.1.0
 
 ### Added
