@@ -1,0 +1,14 @@
+{
+  "ignore": [
+    {
+      "rule": "DS-REF",
+      "subject": "Config.PDUTap",
+      "reason": "docs/HANDOFF-MODBUSCTL.md names go-modbus's Config.PDUTap (otfabric/go-modbus v1.6.0), not a type of this module"
+    },
+    {
+      "rule": "DS-SIG",
+      "subject": "Device",
+      "reason": "docs/HANDOFF-MODBUSCTL.md 2.6 is a design sketch of the replay Device interface for modbusctl, which does not belong to this module"
+    }
+  ]
+}
