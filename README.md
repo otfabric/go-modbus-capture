@@ -92,13 +92,21 @@ On a synthetic typical meter that is about 28 bytes per sample, against 192 for 
 A file cut short by a crash reads up to its last complete block. More in
 [Encodings](docs/encodings.md) and the [format specification](docs/FORMAT.md).
 
-## Quick start
-
-Install the CLI:
+## Install mbcapctl
 
 ```bash
-go install github.com/otfabric/go-modbus-capture/cmd/mbcapctl@latest
+curl -fsSL https://get.otfabric.io/mbcapctl | sh
 ```
+
+```powershell
+irm https://get.otfabric.io/mbcapctl.ps1 | iex
+```
+
+Linux (amd64, arm64, armv7), macOS (Intel, Apple silicon) and Windows (amd64, arm64). The installer verifies the release's SHA-256 checksum, installs per user without `sudo` (`~/.local/bin`, Windows `%LOCALAPPDATA%\OTFabric\bin`), and upgrades in place when run again. Pin a version with `OTF_VERSION=x.y.z`; for CI, containers and device images use `OTF_UNMANAGED_INSTALL=<dir>`; all options: [otfabric/install](https://github.com/otfabric/install#options). `OTF_VERSION` is the version of go-modbus-capture, which ships `mbcapctl`. For offline machines, the archives and checksums are on [Releases](https://github.com/otfabric/go-modbus-capture/releases).
+
+From source (Go 1.26+): `go install github.com/otfabric/go-modbus-capture/cmd/mbcapctl@latest`
+
+## Quick start
 
 Look inside a capture:
 

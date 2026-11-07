@@ -5,10 +5,10 @@ This page takes you from nothing to looking inside a capture, converting it, and
 ## 1. Install the CLI
 
 ```bash
-go install github.com/otfabric/go-modbus-capture/cmd/mbcapctl@latest
+curl -fsSL https://get.otfabric.io/mbcapctl | sh
 ```
 
-Or download a binary from the [releases](https://github.com/otfabric/go-modbus-capture/releases).
+Windows, version pinning and the other options: [Install mbcapctl](../README.md#install-mbcapctl).
 
 ## 2. Get a capture
 

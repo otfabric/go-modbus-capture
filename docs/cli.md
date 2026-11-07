@@ -6,12 +6,8 @@ are done by other tools, such as [`modbusctl`](https://github.com/otfabric/modbu
 
 ## Install
 
-```bash
-go install github.com/otfabric/go-modbus-capture/cmd/mbcapctl@latest
-```
-
-Prebuilt binaries for Linux, macOS and Windows are attached to each
-[release](https://github.com/otfabric/go-modbus-capture/releases).
+See [Install mbcapctl](../README.md#install-mbcapctl) in the README: a one-line installer for Linux,
+macOS and Windows.
 
 ## Common behaviour
 
