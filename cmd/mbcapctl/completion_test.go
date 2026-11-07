@@ -259,14 +259,40 @@ func TestFishCompletion(t *testing.T) {
 func TestPowerShellCompletion(t *testing.T) {
 	pwsh := lookShell(t, "pwsh")
 	script := writeScript(t, "powershell", "mbcapctl.ps1")
+	cases := map[string]string{
+		"mbcapctl co":                 "convert completion",
+		"mbcapctl split --by ":        "target stream fc",
+		"mbcapctl convert --format w": "wide-csv",
+		"mbcapctl completion ":        "bash zsh fish powershell",
+		"mbcapctl version -":          "--help --json",
+		"mbcapctl info --json ":       "",
+	}
+	var inputs []string
+	for in := range cases {
+		inputs = append(inputs, psq(in))
+	}
 	prog := `$p = ` + psq(script) + `; $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($p, [ref]$null, [ref]$errs); ` +
 		`if ($errs.Count) { $errs | ForEach-Object { $_.ToString() }; exit 1 }; . $p; ` +
-		`$r = TabExpansion2 -inputScript 'mbcapctl split --by ' -cursorColumn 21; $r.CompletionMatches.CompletionText -join ' '`
-	out, err := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command", prog).CombinedOutput()
+		`foreach ($in in @(` + strings.Join(inputs, ", ") + `)) { $r = TabExpansion2 -inputScript $in -cursorColumn $in.Length; ` +
+		`$in + ' => ' + ($r.CompletionMatches.CompletionText -join ' ') }`
+	cmd := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command", prog)
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Dir = t.TempDir()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("pwsh: %v\n%s", err, out)
 	}
-	if got := strings.TrimSpace(string(out)); got != "target stream fc" {
-		t.Errorf("pwsh split --by: %q", got)
+	got := map[string]string{}
+	for l := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		in, res, ok := strings.Cut(strings.TrimRight(l, "\r"), " => ")
+		if !ok {
+			t.Fatalf("pwsh output: %s", out)
+		}
+		got[in] = strings.TrimSpace(res)
+	}
+	for in, want := range cases {
+		if got[in] != want {
+			t.Errorf("pwsh %q: %q, want %q", in, got[in], want)
+		}
 	}
 }
