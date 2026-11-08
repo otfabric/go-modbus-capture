@@ -18,7 +18,10 @@ BINARY     = $(BIN_DIR)/$(APP_NAME)
 # -dirty for uncommitted changes.
 TAG        ?= $(shell git describe --tags --exact-match HEAD 2>/dev/null)
 VERSION    ?= $(patsubst v%,%,$(TAG))
-COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff --quiet HEAD 2>/dev/null || echo "-dirty")
+# -dirty when the working tree has changes, as Go itself marks vcs.modified
+# (git status --porcelain, untracked files included); empty outside git.
+DIRTY := $(shell [ -z "$$(git status --porcelain 2>/dev/null)" ] || echo -dirty)
+COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)$(DIRTY)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS := -ldflags "-s -w -X 'main.version=$(VERSION)' -X 'main.tag=$(TAG)' -X 'main.commit=$(COMMIT)' -X 'main.buildDate=$(BUILD_DATE)'"
