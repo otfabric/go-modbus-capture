@@ -133,7 +133,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return exitUsage
 	default:
-		_, _ = fmt.Fprintf(stderr, "mbcapctl %s: %v\n", cmd.name, err)
+		// The error of a reader may quote strings of the file.
+		_, _ = fmt.Fprintf(stderr, "mbcapctl %s: %s\n", cmd.name, printable(err.Error()))
 		return exitError
 	}
 }

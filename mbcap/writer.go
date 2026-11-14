@@ -8,6 +8,7 @@ import (
 	"compress/flate"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 
@@ -36,7 +37,8 @@ const (
 // Options tune a Writer. The zero value is the default.
 type Options struct {
 	Compression Compression
-	// BlockSamples ends a data block after this many samples (default 256).
+	// BlockSamples ends a data block after this many samples (default 256;
+	// at most 65 536, the most a reader accepts in one block).
 	BlockSamples int
 	// BlockBytes ends a data block once its uncompressed body reaches this
 	// size (default 64 KiB; at most MaxBlockRaw).
@@ -46,6 +48,12 @@ type Options struct {
 // Writer writes an MBCAP file. It never seeks, so it can write to a pipe.
 // Blocks are written as they fill; Flush ends the current one, so that the
 // file is readable up to there.
+//
+// A Writer copies what it keeps of a record, so the caller may reuse or
+// change a record's PDUs and tags once the call has returned. Close completes
+// the file once: after it the Writer holds none of its buffers, and every
+// later call returns an error. A Close that refuses its end leaves the Writer
+// open. A Writer is not safe for concurrent use.
 type Writer struct {
 	w      *bufio.Writer
 	off    uint64 // offset of the next byte written
@@ -70,7 +78,28 @@ type Writer struct {
 	index    []blockInfo
 	deflater *flate.Writer
 	deflated bytes.Buffer
+
+	// The size of the index so far: indexLen is the bytes of the entries of
+	// the blocks written, blockStreams those of the stream ids of the open
+	// block.
+	indexLen     int
+	blockStreams int
 }
+
+// Upper bounds on the parts of an index block whose size is only known when
+// the file closes or a data block ends.
+const (
+	// The end flag, the capture end and the block count.
+	indexHeadMax = 1 + 2*binary.MaxVarintLen64
+	// An entry without its stream ids: offset, first and last time, and the
+	// count of at most capture.MaxStreams streams.
+	indexEntryMax = 3*binary.MaxVarintLen64 + 3
+)
+
+// errIndexFull is returned by WriteSample for a sample whose data block the
+// index could not list: the index is a block of at most MaxBlockLen.
+var errIndexFull = fmt.Errorf("mbcap: %w: the index has no room for another data block (it is a block of at most %d bytes): close this file and continue in a new one",
+	capture.ErrCorrupt, MaxBlockLen)
 
 type blockInfo struct {
 	offset, first, last uint64
@@ -91,6 +120,7 @@ func NewWriter(w io.Writer, h capture.Header, opts *Options) (*Writer, error) {
 	if bw.opts.BlockSamples <= 0 {
 		bw.opts.BlockSamples = DefaultBlockSamples
 	}
+	bw.opts.BlockSamples = min(bw.opts.BlockSamples, maxBlockSamples)
 	if bw.opts.BlockBytes <= 0 {
 		bw.opts.BlockBytes = DefaultBlockBytes
 	}
@@ -187,13 +217,29 @@ func (w *Writer) WriteStream(s capture.Stream) error {
 // WriteSample adds a sample to the open data block, unless the capture does
 // not store it (see capture.Writer). A request seen for the first time gets a
 // template block first.
+//
+// The index lists every data block and is itself a block of at most
+// MaxBlockLen, which is room for about 1.7 million data blocks. WriteSample
+// returns an error wrapping capture.ErrCorrupt for a sample whose data block
+// the index could not list. The sample is not written and the Writer stays
+// usable: Close completes the file with the samples written before.
 func (w *Writer) WriteSample(s capture.Sample) error {
 	if err := w.usable(); err != nil {
 		return err
 	}
+	// A time delta is a signed 64-bit value: a sample 2^63 ticks or more
+	// from the previous one starts a new data block, whose base time takes
+	// the step.
+	jump := w.count > 0 && farApart(w.prevAt, s.At)
+	if !w.indexRoom(s.Stream, jump) {
+		return errIndexFull
+	}
 	keep, err := w.ck.Admit(s)
 	if err != nil || !keep {
 		return err
+	}
+	if jump {
+		w.endBlock()
 	}
 	tmpl, ok := w.templates[string(s.Request)]
 	if !ok && len(w.templates) < MaxTemplates {
@@ -245,12 +291,47 @@ func (w *Writer) WriteSample(s capture.Sample) error {
 	w.prev[key] = append(prev[:0], s.Response...)
 	w.prevAt = s.At
 	w.minAt, w.maxAt = min(w.minAt, s.At), max(w.maxAt, s.At)
-	w.inBlock[s.Stream] = struct{}{}
+	if _, in := w.inBlock[s.Stream]; !in {
+		w.inBlock[s.Stream] = struct{}{}
+		w.blockStreams += uvarintLen(uint64(s.Stream))
+	}
 	w.count++
 	if w.count >= w.opts.BlockSamples || len(b.b) >= w.opts.BlockBytes {
 		w.endBlock()
 	}
 	return w.err
+}
+
+// farApart reports whether a and b are 2^63 ticks or more apart.
+func farApart(a, b capture.Ticks) bool {
+	if a > b {
+		a, b = b, a
+	}
+	return b-a >= 1<<63
+}
+
+// indexRoom reports whether the index can list the data block that a sample
+// of stream goes to: the open one, or with next the one after it. An entry
+// counts with its largest size while its block is open.
+func (w *Writer) indexRoom(stream uint32, next bool) bool {
+	n := indexHeadMax + w.indexLen + indexEntryMax + w.blockStreams
+	_, in := w.inBlock[stream]
+	switch {
+	case next:
+		n += indexEntryMax + uvarintLen(uint64(stream))
+	case !in:
+		n += uvarintLen(uint64(stream))
+	}
+	return n <= maxIndexLen
+}
+
+// indexEntryLen returns the size of the index entry of b.
+func indexEntryLen(b blockInfo) int {
+	n := uvarintLen(b.offset) + uvarintLen(b.first) + uvarintLen(b.last) + uvarintLen(uint64(len(b.streams)))
+	for _, s := range b.streams {
+		n += uvarintLen(uint64(s))
+	}
+	return n
 }
 
 // encodeDiff codes cur against prev (same length) as changed 16-bit words: a
@@ -317,11 +398,14 @@ func (w *Writer) endBlock() {
 		streams = append(streams, s)
 	}
 	slices.Sort(streams)
-	w.index = append(w.index, blockInfo{offset: w.off, first: uint64(w.minAt), last: uint64(w.maxAt), streams: streams})
+	info := blockInfo{offset: w.off, first: uint64(w.minAt), last: uint64(w.maxAt), streams: streams}
+	w.index = append(w.index, info)
+	w.indexLen += indexEntryLen(info)
 	w.block(blockData, e.b)
 
 	w.body.b = w.body.b[:0]
 	w.count = 0
+	w.blockStreams = 0
 	clear(w.prev)
 	clear(w.inBlock)
 }
@@ -341,7 +425,11 @@ func (w *Writer) Flush() error {
 }
 
 // Close ends the open data block, writes the index and footer, and flushes.
-// Use capture.End{} when the end is unknown.
+// Use capture.End{} when the end is unknown. The Writer is then closed and
+// holds none of its buffers, whether or not the underlying writer took what
+// was written. Two errors leave the Writer as it was: an end that the capture
+// refuses (one before a sample), after which Close may be called again, and
+// the error of an earlier call that failed on the underlying writer.
 func (w *Writer) Close(end capture.End) error {
 	if err := w.usable(); err != nil {
 		return err
@@ -358,6 +446,10 @@ func (w *Writer) Close(end capture.End) error {
 	if w.err == nil {
 		w.err = w.w.Flush()
 	}
+	// A closed writer keeps none of its buffers: a caller may hold many.
+	w.w, w.scratch, w.body.b = nil, nil, nil
+	w.templates, w.prev, w.inBlock, w.index = nil, nil, nil, nil
+	w.deflater, w.deflated = nil, bytes.Buffer{}
 	return w.err
 }
 

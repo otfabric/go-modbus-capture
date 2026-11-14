@@ -297,18 +297,19 @@ func (c *Checker) sample(s Sample) (bool, error) {
 	return true, nil
 }
 
-// End checks the capture end. No record may follow it.
+// End checks the capture end. No record may follow an end that End accepted;
+// an end that it refuses leaves the Checker as it was.
 func (c *Checker) End(e End) error {
 	if err := c.checkOpen(); err != nil {
 		return err
 	}
-	c.ended = true
 	if e.Known && e.At < c.maxAt {
 		return invalid("capture end %d is before the sample at %d", e.At, c.maxAt)
 	}
 	if !e.Known && e.At != 0 {
 		return invalid("unknown capture end with time %d", e.At)
 	}
+	c.ended = true
 	return nil
 }
 

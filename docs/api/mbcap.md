@@ -117,7 +117,8 @@ ReadIndex reads the index of a complete file from its end, without reading the d
 ```go
 type Options struct {
 	Compression Compression
-	// BlockSamples ends a data block after this many samples (default 256).
+	// BlockSamples ends a data block after this many samples (default 256;
+	// at most 65 536, the most a reader accepts in one block).
 	BlockSamples int
 	// BlockBytes ends a data block once its uncompressed body reaches this
 	// size (default 64 KiB; at most MaxBlockRaw).
@@ -144,6 +145,8 @@ type Reader struct {
 
 Reader reads an MBCAP file as a stream of records. It checks every block's CRC and every record against the model's invariants (capture.Checker), and at the end the index against the blocks it read.
 
+A Reader decodes one data block at a time and holds its samples until Next has returned them: at most 65 536 samples, each with its own copy of the request and response PDU. The records Next returns are the caller's. The first error of Next sticks. A Reader is not safe for concurrent use.
+
 #### func NewReader
 
 ```go
@@ -158,7 +161,7 @@ NewReader reads the magic number and the header block.
 func (r *Reader) Header() capture.Header
 ```
 
-Header returns the capture header.
+Header returns the capture header. The result is the caller's: its Tags map is a copy.
 
 #### func (Reader) Next
 
@@ -182,7 +185,7 @@ Skipped returns the number of blocks skipped because of SkipCorrupt.
 func (r *Reader) Version() (major, minor int)
 ```
 
-Version returns the format version of the file.
+Version returns the format version of the file. The minor version is at most math.MaxInt32; NewReader refuses a file with a larger one.
 
 ### type RepairReport
 
@@ -211,7 +214,7 @@ RepairReport says what Repair kept.
 func Repair(dst io.Writer, src io.Reader, opts *Options) (RepairReport, error)
 ```
 
-Repair reads src as far as it can and writes a complete file to dst, with a new index and footer. It skips blocks with a bad CRC and stops at a truncation or any other error, keeping everything before it. The end is unknown unless src still holds its index. It fails only when the header cannot be read or dst cannot be written.
+Repair reads src as far as it can and writes a complete file to dst, with a new index and footer. It skips blocks with a bad CRC and stops at a truncation or any other error, keeping everything before it; it also stops, with the reason in Stopped, at a sample whose data block the index of dst could not list (see Writer.WriteSample). The end is unknown unless src still holds its index. It fails only when the header cannot be read or dst cannot be written.
 
 ### type Writer
 
@@ -222,10 +225,16 @@ type Writer struct {
 
 	// The open data block.
 
+	// The size of the index so far: indexLen is the bytes of the entries of
+	// the blocks written, blockStreams those of the stream ids of the open
+	// block.
+
 }
 ```
 
 Writer writes an MBCAP file. It never seeks, so it can write to a pipe. Blocks are written as they fill; Flush ends the current one, so that the file is readable up to there.
+
+A Writer copies what it keeps of a record, so the caller may reuse or change a record's PDUs and tags once the call has returned. Close completes the file once: after it the Writer holds none of its buffers, and every later call returns an error. A Close that refuses its end leaves the Writer open. A Writer is not safe for concurrent use.
 
 #### func NewWriter
 
@@ -241,7 +250,7 @@ NewWriter checks h and writes the magic number and the header block.
 func (w *Writer) Close(end capture.End) error
 ```
 
-Close ends the open data block, writes the index and footer, and flushes. Use capture.End{} when the end is unknown.
+Close ends the open data block, writes the index and footer, and flushes. Use capture.End{} when the end is unknown. The Writer is then closed and holds none of its buffers, whether or not the underlying writer took what was written. Two errors leave the Writer as it was: an end that the capture refuses (one before a sample), after which Close may be called again, and the error of an earlier call that failed on the underlying writer.
 
 #### func (Writer) Flush
 
@@ -258,6 +267,8 @@ func (w *Writer) WriteSample(s capture.Sample) error
 ```
 
 WriteSample adds a sample to the open data block, unless the capture does not store it (see capture.Writer). A request seen for the first time gets a template block first.
+
+The index lists every data block and is itself a block of at most MaxBlockLen, which is room for about 1.7 million data blocks. WriteSample returns an error wrapping capture.ErrCorrupt for a sample whose data block the index could not list. The sample is not written and the Writer stays usable: Close completes the file with the samples written before.
 
 #### func (Writer) WriteStream
 

@@ -64,7 +64,7 @@ func ReadIndex(r io.ReaderAt, size int64) (*Index, error) {
 	if typ != blockIndex {
 		return nil, fmt.Errorf("mbcap: %w: footer points to a block of type 0x%02x", capture.ErrCorrupt, typ)
 	}
-	end, blocks, err := decodeIndex(payload)
+	end, blocks, err := decodeIndex(payload, -1)
 	if err != nil {
 		return nil, fmt.Errorf("mbcap: index: %w", err)
 	}
@@ -93,9 +93,11 @@ type RepairReport struct {
 
 // Repair reads src as far as it can and writes a complete file to dst, with
 // a new index and footer. It skips blocks with a bad CRC and stops at a
-// truncation or any other error, keeping everything before it. The end is
-// unknown unless src still holds its index. It fails only when the header
-// cannot be read or dst cannot be written.
+// truncation or any other error, keeping everything before it; it also stops,
+// with the reason in Stopped, at a sample whose data block the index of dst
+// could not list (see Writer.WriteSample). The end is unknown unless src
+// still holds its index. It fails only when the header cannot be read or dst
+// cannot be written.
 func Repair(dst io.Writer, src io.Reader, opts *Options) (RepairReport, error) {
 	var rep RepairReport
 	r, err := NewReader(src)
@@ -124,6 +126,10 @@ func Repair(dst io.Writer, src io.Reader, opts *Options) (RepairReport, error) {
 			continue
 		}
 		if err := capture.Write(w, rec); err != nil {
+			if errors.Is(err, errIndexFull) {
+				rep.Stopped = err
+				break
+			}
 			return rep, err
 		}
 		if _, ok := rec.(capture.Sample); ok {

@@ -25,10 +25,13 @@ type Reader struct {
 
 	// number of the last line read
 
+	// The members of the line being decoded and the object picked from
+	// them, kept from line to line.
+
 }
 ```
 
-Reader reads a capture from JSON Lines.
+Reader reads a capture from JSON Lines. Field names are matched exactly, as docs/FORMAT.md section 3 writes them; a field that appears twice in a line is an error. The records Next returns are the caller's. An error of Next for one line does not stick: the next call goes on with the line after it. A Reader is not safe for concurrent use.
 
 #### func NewReader
 
@@ -44,7 +47,7 @@ NewReader reads and checks the header line.
 func (r *Reader) Header() capture.Header
 ```
 
-Header returns the capture header.
+Header returns the capture header. The result is the caller's: its Tags map is a copy.
 
 #### func (Reader) Next
 
@@ -62,7 +65,7 @@ type Writer struct {
 }
 ```
 
-Writer writes a capture as JSON Lines.
+Writer writes a capture as JSON Lines. It keeps nothing of a record after the call that wrote it. Close completes the capture once: a second Close and a write after it return an error, and a Close that refuses its end leaves the Writer open. A Writer is not safe for concurrent use.
 
 #### func NewWriter
 

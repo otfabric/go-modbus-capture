@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -20,6 +22,11 @@ import (
 // Reader reads an MBCAP file as a stream of records. It checks every block's
 // CRC and every record against the model's invariants (capture.Checker), and
 // at the end the index against the blocks it read.
+//
+// A Reader decodes one data block at a time and holds its samples until Next
+// has returned them: at most 65 536 samples, each with its own copy of the
+// request and response PDU. The records Next returns are the caller's. The
+// first error of Next sticks. A Reader is not safe for concurrent use.
 type Reader struct {
 	br  *bufio.Reader
 	off uint64 // offset of the next byte to read
@@ -77,10 +84,16 @@ func NewReader(r io.Reader) (*Reader, error) {
 	return br, nil
 }
 
-// Header returns the capture header.
-func (r *Reader) Header() capture.Header { return r.h }
+// Header returns the capture header. The result is the caller's: its Tags
+// map is a copy.
+func (r *Reader) Header() capture.Header {
+	h := r.h
+	h.Tags = maps.Clone(h.Tags)
+	return h
+}
 
-// Version returns the format version of the file.
+// Version returns the format version of the file. The minor version is at
+// most math.MaxInt32; NewReader refuses a file with a larger one.
 func (r *Reader) Version() (major, minor int) { return capture.VersionMajor, int(r.minor) }
 
 // Skipped returns the number of blocks skipped because of SkipCorrupt.
@@ -143,10 +156,11 @@ func (r *Reader) nextBlock() (capture.Record, error) {
 		return nil, err
 	}
 	if r.indexOff != 0 && typ != blockFooter {
-		if typ <= blockFooter {
+		switch typ {
+		case blockHeader, blockTarget, blockStream, blockTemplate, blockData, blockIndex:
 			return nil, corrupt("block type 0x%02x after the index", typ)
 		}
-		return nil, nil
+		return nil, nil // unknown block types are skipped here too
 	}
 	switch typ {
 	case blockHeader:
@@ -181,11 +195,18 @@ func (r *Reader) nextBlock() (capture.Record, error) {
 		r.pending = samples
 		return nil, nil
 	case blockIndex:
-		end, blocks, err := decodeIndex(payload)
+		// The index is compared with the data blocks read, unless a block
+		// was skipped: its block count first, before any entry is decoded.
+		check := !r.SkipCorrupt || r.skipped == 0
+		count := -1
+		if check {
+			count = len(r.blocks)
+		}
+		end, blocks, err := decodeIndex(payload, count)
 		if err != nil {
 			return nil, err
 		}
-		if !r.SkipCorrupt || r.skipped == 0 {
+		if check {
 			if err := r.checkIndex(blocks); err != nil {
 				return nil, err
 			}
@@ -236,9 +257,8 @@ func (r *Reader) readBlock() (uint8, []byte, error) {
 	if length > MaxBlockLen {
 		return 0, nil, corrupt("block of %d bytes, more than %d", length, MaxBlockLen)
 	}
-	buf := make([]byte, length+4)
-	n, err := io.ReadFull(r.br, buf)
-	r.off += uint64(n)
+	buf, err := readN(r.br, length+4)
+	r.off += uint64(len(buf))
 	if err != nil {
 		return 0, nil, truncatedOr(err)
 	}
@@ -264,7 +284,8 @@ func corrupt(format string, args ...any) error {
 func decodeHeader(payload []byte) (capture.Header, uint64, error) {
 	d := &dec{b: payload}
 	major := d.uvarint()
-	minor := d.uvarint()
+	// Version returns the minor version as an int, on every platform.
+	minor := d.uvarintMax("minor version", math.MaxInt32)
 	if d.err == nil && major != capture.VersionMajor {
 		return capture.Header{}, 0, corrupt("format version %d.%d: this reader reads major version %d", major, minor, capture.VersionMajor)
 	}
@@ -332,14 +353,15 @@ func (r *Reader) decodeData(payload []byte) ([]capture.Sample, blockInfo, error)
 	var body []byte
 	switch codec {
 	case codecNone:
-		if uint64(len(d.b)) != rawLen {
+		// Bytes after the declared body are ignored, as in any known block.
+		if uint64(len(d.b)) < rawLen {
 			return nil, blockInfo{}, corrupt("uncompressed data block of %d bytes, declared %d", len(d.b), rawLen)
 		}
-		body = d.b
+		body = d.b[:rawLen]
 	case codecDeflate:
-		body = make([]byte, rawLen)
 		fr := flate.NewReader(bytes.NewReader(d.b))
-		if _, err := io.ReadFull(fr, body); err != nil {
+		var err error
+		if body, err = readN(fr, rawLen); err != nil {
 			return nil, blockInfo{}, corrupt("deflate: %v", err)
 		}
 		if n, _ := fr.Read(make([]byte, 1)); n != 0 {
@@ -356,16 +378,22 @@ func (r *Reader) decodeData(payload []byte) ([]capture.Sample, blockInfo, error)
 func (r *Reader) decodeBody(body []byte) ([]capture.Sample, blockInfo, error) {
 	d := &dec{b: body}
 	base := d.uvarint()
-	// Every sample takes at least 4 bytes.
-	count := d.uvarintMax("sample count", uint64(len(body)/4))
+	// Every sample takes at least 4 bytes, and a block holds at most
+	// maxBlockSamples of them.
+	count := d.uvarintMax("sample count", min(uint64(len(body)/4), maxBlockSamples))
 	if d.err != nil {
 		return nil, blockInfo{}, d.err
 	}
 	if count == 0 {
 		return nil, blockInfo{}, corrupt("data block without samples")
 	}
-	samples := make([]capture.Sample, 0, count)
-	prev := map[string][]byte{}
+	// The slice grows with the samples decoded, not with the declared count.
+	samples := make([]capture.Sample, 0, min(count, DefaultBlockSamples))
+	// The previous response to each (stream, request) of the block: slots
+	// maps the request key to its place in last.
+	slots := map[string]int{}
+	var last [][]byte
+	var key []byte
 	streams := map[uint32]struct{}{}
 	at := base
 	info := blockInfo{first: ^uint64(0)}
@@ -394,8 +422,12 @@ func (r *Reader) decodeBody(body []byte) ([]capture.Sample, blockInfo, error) {
 		}
 		at += uint64(dt)
 
-		key := requestKey(stream, req)
-		last, seen := prev[key]
+		key = append(binary.BigEndian.AppendUint32(key[:0], stream), req...)
+		slot, seen := slots[string(key)]
+		var prev []byte
+		if seen {
+			prev = last[slot]
+		}
 		var resp []byte
 		switch flags & flagCodingMask {
 		case codingRaw:
@@ -404,21 +436,33 @@ func (r *Reader) decodeBody(body []byte) ([]capture.Sample, blockInfo, error) {
 			if !seen {
 				d.fail("sample %d: SAME without a previous response in the block", i)
 			}
-			resp = append([]byte(nil), last...)
+			resp = append([]byte(nil), prev...)
 		case codingDiff:
 			if !seen {
 				d.fail("sample %d: DIFF without a previous response in the block", i)
 			}
-			resp = applyDiff(d, last)
+			resp = applyDiff(d, prev)
 		default:
 			d.fail("sample %d: reserved response coding 3", i)
 		}
 		if d.err != nil {
 			return nil, blockInfo{}, d.err
 		}
-		prev[key] = resp
+		// last keeps the slice the sample returns: every sample of the block
+		// is decoded before Next returns the first one.
+		if seen {
+			last[slot] = resp
+		} else {
+			slots[string(key)] = len(last)
+			last = append(last, resp)
+		}
 		streams[stream] = struct{}{}
 		info.first, info.last = min(info.first, at), max(info.last, at)
+		if len(samples) == cap(samples) {
+			grown := make([]capture.Sample, len(samples), min(count, 2*uint64(len(samples))))
+			copy(grown, samples)
+			samples = grown
+		}
 		samples = append(samples, capture.Sample{Stream: stream, At: capture.Ticks(at), Request: slices.Clone(req), Response: resp})
 	}
 	for s := range streams {
@@ -456,7 +500,9 @@ func applyDiff(d *dec, prev []byte) []byte {
 	return out
 }
 
-func decodeIndex(payload []byte) (capture.End, []blockInfo, error) {
+// decodeIndex decodes an index block. With count >= 0 the index must list
+// count data blocks: another number is an error before an entry is decoded.
+func decodeIndex(payload []byte, count int) (capture.End, []blockInfo, error) {
 	d := &dec{b: payload}
 	known := d.u8()
 	end := capture.End{Known: known == 1, At: capture.Ticks(d.uvarint())}
@@ -465,6 +511,9 @@ func decodeIndex(payload []byte) (capture.End, []blockInfo, error) {
 	}
 	// Every entry takes at least 4 bytes.
 	n := d.uvarintMax("index block count", uint64(len(payload)/4))
+	if d.err == nil && count >= 0 && n != uint64(count) {
+		d.fail("the index lists %d data blocks, the file has %d", n, count)
+	}
 	var blocks []blockInfo
 	for i := uint64(0); i < n && d.err == nil; i++ {
 		b := blockInfo{offset: d.uvarint(), first: d.uvarint(), last: d.uvarint()}
@@ -477,10 +526,9 @@ func decodeIndex(payload []byte) (capture.End, []blockInfo, error) {
 	return end, blocks, d.err
 }
 
+// checkIndex compares the entries of the index with the data blocks read.
+// decodeIndex has checked that there are as many.
 func (r *Reader) checkIndex(blocks []blockInfo) error {
-	if len(blocks) != len(r.blocks) {
-		return corrupt("the index lists %d data blocks, the file has %d", len(blocks), len(r.blocks))
-	}
 	for i, b := range blocks {
 		got := r.blocks[i]
 		if b.offset != got.offset || b.first != got.first || b.last != got.last || !slices.Equal(b.streams, got.streams) {

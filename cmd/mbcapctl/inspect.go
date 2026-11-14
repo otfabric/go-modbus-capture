@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,9 +12,12 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/otfabric/go-modbus-capture/capture"
 	"github.com/otfabric/go-modbus-capture/mbcap"
@@ -108,11 +112,67 @@ func endpoint(t capture.Target) string {
 	switch {
 	case !t.Serial.IsZero():
 		s := t.Serial
-		return fmt.Sprintf("%s %s %d %d%s%d", t.Transport, s.Device, s.Baud, s.DataBits, strings.ToUpper(s.Parity.String()[:1]), s.StopBits)
+		return fmt.Sprintf("%s %s %d %d%s%d", t.Transport, shown(s.Device), s.Baud, s.DataBits, strings.ToUpper(s.Parity.String()[:1]), s.StopBits)
 	case t.Host != "" || t.Port != 0:
-		return fmt.Sprintf("%s %s:%d", t.Transport, t.Host, t.Port)
+		return fmt.Sprintf("%s %s:%d", t.Transport, shown(t.Host), t.Port)
 	}
 	return t.Transport.String()
+}
+
+// shown returns a string of a capture as info and dump print it: as it is
+// when it is valid UTF-8 of printable characters (strconv.IsPrint), and as a
+// quoted Go string otherwise. What a capture holds reaches the terminal as
+// text only: no control character, no line break.
+func shown(s string) string {
+	if !utf8.ValidString(s) {
+		return strconv.Quote(s)
+	}
+	for _, r := range s {
+		if !strconv.IsPrint(r) {
+			return strconv.Quote(s)
+		}
+	}
+	return s
+}
+
+// printable returns a message that may quote strings of a capture, such as
+// the error of a reader, with every character that is not printable written
+// as its Go escape, line breaks included: the message stays one line of text.
+func printable(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		switch {
+		case r == utf8.RuneError && n == 1:
+			_, _ = fmt.Fprintf(&b, `\x%02x`, s[0])
+		case strconv.IsPrint(r):
+			b.WriteRune(r)
+		default:
+			q := strconv.QuoteRune(r)
+			b.WriteString(q[1 : len(q)-1])
+		}
+		s = s[n:]
+	}
+	return b.String()
+}
+
+// jsonText returns JSON text with every character that is not printable
+// written as a \u escape, which changes no value. encoding/json escapes the
+// control characters below U+0020 and writes the others as they are.
+func jsonText(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r < 0x7f || strconv.IsPrint(r):
+			b.WriteRune(r)
+		case r > 0xFFFF:
+			hi, lo := utf16.EncodeRune(r)
+			_, _ = fmt.Fprintf(&b, `\u%04x\u%04x`, hi, lo)
+		default:
+			_, _ = fmt.Fprintf(&b, `\u%04x`, r)
+		}
+	}
+	return b.String()
 }
 
 func fcKey(fc uint8) string { return fmt.Sprintf("%02x", fc) }
@@ -188,9 +248,14 @@ func runInfo(e *env, _ *flag.FlagSet, args []string) error {
 		}
 	}
 	if infoJSON {
-		enc := json.NewEncoder(e.stdout)
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
 		enc.SetIndent("", "  ")
-		return enc.Encode(info)
+		if err := enc.Encode(info); err != nil {
+			return err
+		}
+		_, err := io.WriteString(e.stdout, jsonText(buf.String()))
+		return err
 	}
 	printInfo(e.stdout, info, &h)
 	return nil
@@ -220,7 +285,7 @@ func printInfo(w io.Writer, info *Info, h *capture.Header) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "File:\t%s (%s)\n", info.File, info.Format)
 	if info.Producer != "" {
-		_, _ = fmt.Fprintf(tw, "Producer:\t%s\n", info.Producer)
+		_, _ = fmt.Fprintf(tw, "Producer:\t%s\n", shown(info.Producer))
 	}
 	_, _ = fmt.Fprintf(tw, "Start:\t%s\n", info.WallStart.Format(time.RFC3339Nano))
 	_, _ = fmt.Fprintf(tw, "Tick:\t%v\n", time.Duration(info.TickNS))
@@ -236,7 +301,7 @@ func printInfo(w io.Writer, info *Info, h *capture.Header) {
 	}
 	_, _ = fmt.Fprintf(tw, "Mode:\t%s\n", strings.Join(flags, ", "))
 	for _, k := range slices.Sorted(maps.Keys(info.Tags)) {
-		_, _ = fmt.Fprintf(tw, "Tag:\t%s=%s\n", k, info.Tags[k])
+		_, _ = fmt.Fprintf(tw, "Tag:\t%s=%s\n", shown(k), shown(info.Tags[k]))
 	}
 	switch {
 	case info.Truncated:
@@ -269,7 +334,7 @@ func printInfo(w io.Writer, info *Info, h *capture.Header) {
 	_, _ = fmt.Fprintf(tw, "  id\ttarget\trole\tlabel\tsamples\trequests\tfirst\tlast\tinterval\tfunctions\n")
 	for _, s := range info.Streams {
 		fcs := slices.Sorted(maps.Keys(s.Functions))
-		_, _ = fmt.Fprintf(tw, "  %d\t%d\t%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", s.ID, s.Target, orDash(s.Role), quoteOrDash(s.Label),
+		_, _ = fmt.Fprintf(tw, "  %d\t%d\t%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", s.ID, s.Target, orDash(shown(s.Role)), quoteOrDash(s.Label),
 			s.Samples, s.Requests, dur(s.First), dur(s.Last), dur(s.Cadence), strings.Join(fcs, ","))
 	}
 	_ = tw.Flush()
@@ -303,7 +368,7 @@ func runVerify(e *env, _ *flag.FlagSet, args []string) error {
 			if errors.Is(err, capture.ErrTruncated) {
 				hint = " (run mbcapctl repair)"
 			}
-			_, _ = fmt.Fprintf(e.stdout, "%s: FAIL: %v%s\n", path, err, hint)
+			_, _ = fmt.Fprintf(e.stdout, "%s: FAIL: %s%s\n", path, printable(err.Error()), hint)
 		default:
 			endText := "end not recorded"
 			if end.Known {
@@ -372,7 +437,7 @@ func runDump(e *env, _ *flag.FlagSet, args []string) error {
 		_, _ = fmt.Fprint(w, " exceptions")
 	}
 	for _, k := range slices.Sorted(maps.Keys(h.Tags)) {
-		_, _ = fmt.Fprintf(w, " %s=%q", k, h.Tags[k])
+		_, _ = fmt.Fprintf(w, " %s=%q", shown(k), h.Tags[k])
 	}
 	_, _ = fmt.Fprintln(w)
 	when := func(at capture.Ticks) string {
@@ -393,11 +458,11 @@ func runDump(e *env, _ *flag.FlagSet, args []string) error {
 		case capture.Target:
 			_, _ = fmt.Fprintf(w, "target  %d %s %s unit=%d", v.ID, quoteOrDash(v.Label), endpoint(v), v.Unit)
 			for _, k := range slices.Sorted(maps.Keys(v.Tags)) {
-				_, _ = fmt.Fprintf(w, " %s=%q", k, v.Tags[k])
+				_, _ = fmt.Fprintf(w, " %s=%q", shown(k), v.Tags[k])
 			}
 			_, _ = fmt.Fprintln(w)
 		case capture.Stream:
-			_, _ = fmt.Fprintf(w, "stream  %d target=%d role=%s label=%s\n", v.ID, v.Target, orDash(v.Role), quoteOrDash(v.Label))
+			_, _ = fmt.Fprintf(w, "stream  %d target=%d role=%s label=%s\n", v.ID, v.Target, orDash(shown(v.Role)), quoteOrDash(v.Label))
 		case capture.Sample:
 			mark := ""
 			if v.IsException() {

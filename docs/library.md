@@ -83,6 +83,13 @@ return w.Close(capture.End{Known: true, At: h.Ticks(time.Since(start))})
 - **Live capture.** Call `w.Flush()` on a timer: it ends the open data block and flushes it, after which
   the file is readable up to there. For low-latency live capture pass
   `&mbcap.Options{Compression: mbcap.NoCompression}`.
+- **Long recordings.** A binary file holds about 1.7 million data blocks, because its index is one block
+  of at most 32 MiB: with a `Flush` every second that is about 20 days. `WriteSample` returns an error
+  wrapping `capture.ErrCorrupt` for the sample that no longer fits. The writer stays usable: `Close` it, and
+  continue in a new file.
+- **Close once.** `Close` completes the capture; a second `Close` and a write after it are errors. A `Close`
+  that refuses its end (an end before a sample) leaves the writer open, so it can be called again.
+- **The writer copies.** Once a call has returned, the PDUs and tag maps passed to it are yours again.
 - **Not concurrent.** A writer is not safe for concurrent use. Serialise calls, for example by funnelling
   samples from all poll goroutines through one channel.
 - `jsonl.NewWriter(w, h)` and `mbcsv.NewWriter(w, h)` work the same way, without options.
@@ -130,8 +137,14 @@ for {
 - Readers check every rule of the model as they go. A record a reader returns is valid; you do not need to
   validate it again.
 - Readers bound every length and count, and are fuzzed: they are safe on untrusted files.
+- What a reader returns is yours: the header and every record are copies, with their own PDUs and tag maps.
+- Stop at the first error, as the loop above does. After an error the binary reader returns the same error
+  from every later `Next`; the JSON Lines and CSV readers go on with the line or row after the one in error.
+- A reader is not safe for concurrent use.
 - `capture.ReadAll(r)` loads a whole capture into a `*capture.Capture` (header, targets, streams, samples,
-  end). It returns what it read so far together with the error.
+  end). It returns what it read so far together with the error. A loaded capture takes memory in proportion
+  to its samples, whatever the size of the file: a compressed binary file can be far smaller. The loop above
+  holds one data block at a time (at most 65 536 samples).
 
 ## Errors
 
@@ -198,8 +211,11 @@ stats, err := edit.Filter(r, sel, "my-tool filter", open)
 |---|---|
 | `Filter(src, sel, step, open)` | keeps a selection; ids, times and wall-clock start unchanged |
 | `Trim(src, from, to, step, open)` | keeps a window and rebases it to tick 0 (the wall-clock start moves with it) |
-| `Split(src, by, step, open)` | writes one capture per target (`ByTarget`), stream (`ByStream`) or function code (`ByFunction`); `open` gets the part's key |
-| `Merge(inputs, mode, step, open)` | combines loaded captures, rebased exactly on their wall-clock starts, ids renumbered; `Interleave` by time or `Concatenate` |
+| `Split(src, by, step, open)` | writes one capture per target (`ByTarget`), stream (`ByStream`) or function code (`ByFunction`); `open` gets the part's key. Every part stays open until `src` ends; at most 4 096 parts |
+| `Merge(inputs, mode, step, open)` | combines loaded captures, rebased exactly on their wall-clock starts, ids renumbered; `Interleave` by time or `Concatenate`. The inputs are not changed; the samples written share their PDUs with them |
+
+An operation that returns an error has not closed the writers it opened: their output is incomplete, and the
+caller discards it (as `mbcapctl` does with its temporary files).
 
 ## Binary file extras
 
@@ -209,7 +225,7 @@ stats, err := edit.Filter(r, sel, "my-tool filter", open)
   kept (`RepairReport`).
 - `Reader.SkipCorrupt = true` makes a reader skip blocks with a bad checksum instead of failing.
 - `mbcap.Options` sets the compression (`Deflate`, `NoCompression`) and the block size (`BlockSamples`,
-  `BlockBytes`).
+  at most 65 536, and `BlockBytes`, at most 16 MiB).
 
 ## Testing your code
 

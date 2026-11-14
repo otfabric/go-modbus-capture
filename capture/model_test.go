@@ -404,3 +404,70 @@ func TestSplitAddressesEdges(t *testing.T) {
 		})
 	}
 }
+
+// An end that the Checker refuses leaves it as it was: the capture is not
+// ended, so records and another end are still checked as before.
+func TestCheckerRefusedEnd(t *testing.T) {
+	req, resp := []byte{3, 0, 0, 0, 1}, []byte{3, 2, 0, 7}
+	for _, refused := range []End{
+		{Known: true, At: 8}, // before the sample at 9
+		{Known: false, At: 1},
+	} {
+		c := checker(t, Header{})
+		if err := c.Target(Target{ID: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Stream(Stream{ID: 1, Target: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Sample(Sample{Stream: 1, At: 9, Request: req, Response: resp}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.End(refused); !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("End(%+v) = %v, want ErrCorrupt", refused, err)
+		}
+		if err := c.Sample(Sample{Stream: 1, At: 10, Request: req, Response: resp}); err != nil {
+			t.Fatalf("a sample after the refused end %+v: %v", refused, err)
+		}
+		if err := c.End(End{Known: true, At: 10}); err != nil {
+			t.Fatalf("a valid end after the refused end %+v: %v", refused, err)
+		}
+		if err := c.End(End{Known: true, At: 10}); err == nil {
+			t.Fatal("a second accepted end")
+		}
+	}
+}
+
+// A change-only capture tracks the last response of at most MaxRequests
+// distinct (stream, request) pairs: the pair one beyond is ErrCorrupt, and
+// the pairs already tracked go on.
+func TestCheckerRequestLimit(t *testing.T) {
+	c := checker(t, Header{ChangeOnly: true})
+	if err := c.Target(Target{ID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Stream(Stream{ID: 1, Target: 1}); err != nil {
+		t.Fatal(err)
+	}
+	request := func(i int) []byte { return []byte{3, byte(i >> 16), byte(i >> 8), byte(i), 1} }
+	resp := []byte{3, 2, 0, 7}
+	for i := range MaxRequests {
+		if keep, err := c.Admit(Sample{Stream: 1, Request: request(i), Response: resp}); err != nil || !keep {
+			t.Fatalf("request %d of %d: keep=%v err=%v", i+1, MaxRequests, keep, err)
+		}
+	}
+	_, err := c.Admit(Sample{Stream: 1, Request: request(MaxRequests), Response: resp})
+	if !errors.Is(err, ErrCorrupt) || !strings.Contains(err.Error(), "distinct requests") {
+		t.Fatalf("request %d: err = %v, want ErrCorrupt naming the distinct requests", MaxRequests+1, err)
+	}
+	if keep, err := c.Admit(Sample{Stream: 1, Request: request(0), Response: []byte{3, 2, 0, 8}}); err != nil || !keep {
+		t.Fatalf("a tracked request with a new response: keep=%v err=%v", keep, err)
+	}
+	// A capture that is not change-only tracks nothing and has no such limit.
+	full := checker(t, Header{})
+	_ = full.Target(Target{ID: 1})
+	_ = full.Stream(Stream{ID: 1, Target: 1})
+	if full.last != nil {
+		t.Fatal("a full capture tracks responses")
+	}
+}

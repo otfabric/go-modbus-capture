@@ -21,7 +21,9 @@ you like, without touching the real devices.
   untangle or split.
 - **Compact and safe**: about 28 bytes per sample for a typical meter, append-only, checksummed, readable
   after a crash.
-- **Lossless text twins**: JSON Lines and CSV versions that convert back to the identical file.
+- **Lossless text twins**: JSON Lines and CSV versions that convert back to the identical capture: every
+  record, time and PDU byte. (The bytes of a binary file also depend on the block size and compression it
+  was written with.)
 - **No decoding, no surprises**: values stay raw; nothing is interpolated or invented.
 
 This repository owns the format and the tooling for capture files. Recording from devices and replaying

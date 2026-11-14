@@ -8,7 +8,11 @@
 // relative times of samples.
 //
 // Operations take an OpenFunc instead of a Writer, because the header of the
-// result is only known once the operation has derived it.
+// result is only known once the operation has derived it. An operation calls
+// its open function on the calling goroutine and never closes the io.Writer
+// behind the capture.Writer it gets. When an operation returns an error, the
+// writers it opened are not closed: their output is incomplete and the caller
+// discards it.
 package edit
 
 import (
@@ -191,11 +195,21 @@ func SplitKey(by SplitBy, target, stream uint32, fc uint8) string {
 // SplitOpenFunc opens the writer of the part named key.
 type SplitOpenFunc func(key string, h capture.Header) (capture.Writer, error)
 
+// maxSplitParts is the largest number of parts of one Split. Every part is
+// an open writer until the input ends.
+const maxSplitParts = 4096
+
 // Split writes every sample of src to the part its SplitKey names, opened on
 // first use, with the definitions it needs. Each part keeps the header (plus
 // provenance naming the part), the ids and the capture end of src. A target
 // or stream without samples goes to no part. It returns the number of
 // samples per part.
+//
+// Every part stays open until src ends, and the parts are closed then, in the
+// order of their keys. A capture splits into at most 4096 parts: Split
+// returns an error for the sample that would need one more, without opening
+// it. On any error Split returns with the parts it opened still open (see
+// the package comment).
 func Split(src capture.Reader, by SplitBy, provenance string, open SplitOpenFunc) (map[string]int, error) {
 	type part struct {
 		w       capture.Writer
@@ -228,6 +242,9 @@ func Split(src capture.Reader, by SplitBy, provenance string, open SplitOpenFunc
 			key := SplitKey(by, s.Target, s.ID, v.Function())
 			p := parts[key]
 			if p == nil {
+				if len(parts) >= maxSplitParts {
+					return counts, fmt.Errorf("edit: more than %d parts: split a selection of the capture (Filter), or by another key", maxSplitParts)
+				}
 				step := provenance
 				if step != "" {
 					step += " (" + key + ")"
@@ -267,7 +284,8 @@ func Split(src capture.Reader, by SplitBy, provenance string, open SplitOpenFunc
 	return counts, nil
 }
 
-// Input is one capture to merge, with the name recorded in TagSource.
+// Input is one capture to merge, with the name recorded in TagSource. Capture
+// must not be nil, and its header must be valid (capture.CheckHeader).
 type Input struct {
 	Name    string
 	Capture *capture.Capture
@@ -295,10 +313,23 @@ const (
 // does. The end is the latest rebased end when every input has one, and
 // unknown otherwise. Alignment between inputs is only as good as the clocks
 // of the hosts that recorded them.
+//
+// Merge does not change its inputs. The samples it writes share their PDUs
+// with the inputs: it copies neither, and the writer gets them as they are.
+// An input without a capture, or with a header that capture.CheckHeader
+// refuses, is an error wrapping capture.ErrCorrupt.
 func Merge(inputs []Input, mode MergeMode, provenance string, open OpenFunc) (Stats, error) {
 	var st Stats
 	if len(inputs) == 0 {
 		return st, fmt.Errorf("edit: nothing to merge")
+	}
+	for i, in := range inputs {
+		if in.Capture == nil {
+			return st, fmt.Errorf("edit: input %d: %w: no capture", i, capture.ErrCorrupt)
+		}
+		if err := capture.CheckHeader(&in.Capture.Header); err != nil {
+			return st, fmt.Errorf("edit: input %d: %w", i, err)
+		}
 	}
 	wallMin := inputs[0].Capture.Header.WallStart
 	for _, in := range inputs[1:] {

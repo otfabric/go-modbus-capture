@@ -4,9 +4,11 @@ package mbcap
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/otfabric/go-modbus-capture/capture"
+	"github.com/otfabric/go-modbus-capture/internal/fuzzcap"
 	"github.com/otfabric/go-modbus-capture/internal/synth"
 )
 
@@ -60,4 +62,17 @@ func TestRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+// What the reader returns is the caller's, and the writer keeps nothing of
+// the caller's: with small data blocks, so that responses are coded against
+// the ones before them in several blocks, compressed and not.
+func TestOwnership(t *testing.T) {
+	fuzzcap.CheckOwnership(t, binaryCodec)
+	fuzzcap.CheckOwnership(t, fuzzcap.Codec{
+		NewReader: binaryCodec.NewReader,
+		NewWriter: func(w io.Writer, h capture.Header) (capture.Writer, error) {
+			return NewWriter(w, h, &Options{Compression: NoCompression})
+		},
+	})
 }

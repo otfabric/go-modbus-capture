@@ -160,5 +160,8 @@ major version, readers accept newer minor versions, which may only add block typ
 ## Limits
 
 Readers treat every file as potentially hostile: lengths and counts are capped, and readers are fuzzed.
-The limits (string length, tags, targets, streams, block sizes, line length) are listed in the
-[specification](FORMAT.md#1-logical-model). Ordinary captures never come near them.
+The limits (string length, tags, targets, streams, block sizes, samples per data block, line and row
+length, CSV columns) are listed in the [specification](FORMAT.md#1-logical-model). Ordinary captures never
+come near them, with one exception: a binary file holds about 1.7 million data blocks, which a recorder
+that flushes every second reaches after about 20 days. It then continues in a new file
+([LIMITATIONS.md](../LIMITATIONS.md#input-limits)).

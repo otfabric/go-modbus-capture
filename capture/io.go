@@ -22,6 +22,17 @@ var ErrCorrupt = errors.New("capture: corrupt")
 
 // A Reader returns the records of a capture in order. Definitions come before
 // the samples that use them; the End, when the capture has one, comes last.
+//
+// What a Reader returns is the caller's: the header and every record are
+// copies, with their own PDUs and tag maps, which the caller may change.
+//
+// The readers of this module differ in one point. After an error other than
+// io.EOF, the binary reader (mbcap) returns the same error from every later
+// Next; the text readers (jsonl, mbcsv) go on with the line or row after the
+// one in error. Code written for any Reader stops at the first error, as
+// ReadAll and Copy do.
+//
+// A Reader is not safe for concurrent use.
 type Reader interface {
 	// Header returns the capture header.
 	Header() Header
@@ -34,16 +45,28 @@ type Reader interface {
 // for an invalid one. A sample that a change-only capture does not store, or
 // an exception response in a capture without Exceptions, is dropped without
 // error.
+//
+// A Writer copies what it keeps of a record: once a call has returned, the
+// caller may reuse or change the PDUs and tag maps it passed.
+//
+// A Writer is not safe for concurrent use.
 type Writer interface {
 	WriteTarget(t Target) error
 	WriteStream(s Stream) error
 	WriteSample(s Sample) error
 	// Close completes the capture with its end and flushes it. It does not
 	// close the underlying io.Writer. Use End{} when the end is unknown.
+	//
+	// A capture is closed once: the writers of this module return an error
+	// from a second Close and from a write after Close. A Close that refuses
+	// its end, because the end is before a sample, leaves the Writer open:
+	// Close may be called again with another end.
 	Close(end End) error
 }
 
-// Capture is a whole capture in memory.
+// Capture is a whole capture in memory. It takes memory in proportion to the
+// number of samples and the size of their PDUs, whatever the size of the file
+// it was read from: a compressed binary file can be far smaller.
 type Capture struct {
 	Header  Header
 	Targets []Target

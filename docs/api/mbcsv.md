@@ -42,7 +42,7 @@ type Reader struct {
 }
 ```
 
-Reader reads a capture from long CSV.
+Reader reads a capture from long CSV. A row holds at most 4096 fields and MaxRecordLen bytes. The records Next returns are the caller's. An error of Next for one row does not stick: the next call goes on with the row after it. A Reader is not safe for concurrent use.
 
 #### func NewReader
 
@@ -58,7 +58,7 @@ NewReader reads the column names and the header row.
 func (r *Reader) Header() capture.Header
 ```
 
-Header returns the capture header.
+Header returns the capture header. The result is the caller's: its Tags map is a copy.
 
 #### func (Reader) Next
 
@@ -102,7 +102,7 @@ type Writer struct {
 }
 ```
 
-Writer writes a capture as long CSV.
+Writer writes a capture as long CSV. It keeps nothing of a record after the call that wrote it. Close completes the capture once: a second Close and a write after it return an error, and a Close that refuses its end leaves the Writer open. A Writer is not safe for concurrent use.
 
 #### func NewWriter
 
