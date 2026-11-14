@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,11 @@ const (
 // MaxRecordLen is the largest CSV record (row) a Reader accepts.
 const MaxRecordLen = 4 << 20
 
+// maxColumns is the largest number of fields in a row a Reader accepts, the
+// row of column names included: the 25 columns of the format and room for
+// the columns other tools add.
+const maxColumns = 4096
+
 // Record types (the t column), as in JSON Lines.
 const (
 	typeHeader = "header"
@@ -77,7 +83,10 @@ const (
 	flagExceptions = "exceptions"
 )
 
-// Writer writes a capture as long CSV.
+// Writer writes a capture as long CSV. It keeps nothing of a record after the
+// call that wrote it. Close completes the capture once: a second Close and a
+// write after it return an error, and a Close that refuses its end leaves the
+// Writer open. A Writer is not safe for concurrent use.
 type Writer struct {
 	cw     *csv.Writer
 	ck     *capture.Checker
@@ -219,7 +228,10 @@ func (w *Writer) Close(end capture.End) error {
 	return w.cw.Error()
 }
 
-// Reader reads a capture from long CSV.
+// Reader reads a capture from long CSV. A row holds at most 4096 fields and
+// MaxRecordLen bytes. The records Next returns are the caller's. An error of
+// Next for one row does not stick: the next call goes on with the row after
+// it. A Reader is not safe for concurrent use.
 type Reader struct {
 	cr     *csv.Reader
 	budget *budgetReader
@@ -284,8 +296,13 @@ func NewReader(r io.Reader) (*Reader, error) {
 	return lr, nil
 }
 
-// Header returns the capture header.
-func (r *Reader) Header() capture.Header { return r.h }
+// Header returns the capture header. The result is the caller's: its Tags
+// map is a copy.
+func (r *Reader) Header() capture.Header {
+	h := r.h
+	h.Tags = maps.Clone(h.Tags)
+	return h
+}
 
 // advance reads the row after the current one, so that next can tell a last
 // row cut short (no newline at the end of the input) from a complete one.
@@ -313,6 +330,9 @@ func (r *Reader) next() ([]string, error) {
 func (r *Reader) csvErr(err error) error {
 	if errors.Is(err, errRecordTooLong) {
 		return fmt.Errorf("mbcsv: %w: a row is longer than %d bytes", capture.ErrCorrupt, MaxRecordLen)
+	}
+	if errors.Is(err, errTooManyColumns) {
+		return fmt.Errorf("mbcsv: %w: a row has more than %d columns", capture.ErrCorrupt, maxColumns)
 	}
 	if pe, ok := errors.AsType[*csv.ParseError](err); ok {
 		if errors.Is(pe.Err, csv.ErrQuote) && r.budget.eof {
@@ -521,20 +541,35 @@ func (r *Reader) corrupt(format string, args ...any) error { return r.wrap(inval
 
 func (r *Reader) wrap(err error) error { return fmt.Errorf("mbcsv: line %d: %w", r.line, err) }
 
-var errRecordTooLong = errors.New("mbcsv: record too long")
+var (
+	errRecordTooLong  = errors.New("mbcsv: record too long")
+	errTooManyColumns = errors.New("mbcsv: too many columns")
+)
 
-// budgetReader limits how much the CSV reader may read for one record, and
-// remembers whether the input ended with a newline.
+// budgetReader limits how much the CSV reader may read for one record and
+// how many fields a record holds, and remembers whether the input ended with
+// a newline.
 type budgetReader struct {
 	r    io.Reader
 	left int
 	last byte
 	eof  bool
+
+	// The field separators of the record passing through, outside quoted
+	// fields. The input ends with errTooManyColumns before the separator
+	// that would start field maxColumns+1, so that the CSV reader never
+	// holds more fields than that.
+	quoted bool
+	commas int
+	err    error
 }
 
 func (b *budgetReader) reset() { b.left = MaxRecordLen + 2*4096 }
 
 func (b *budgetReader) Read(p []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
 	if b.left <= 0 {
 		return 0, errRecordTooLong
 	}
@@ -542,6 +577,26 @@ func (b *budgetReader) Read(p []byte) (int, error) {
 		p = p[:b.left]
 	}
 	n, err := b.r.Read(p)
+	for i, c := range p[:n] {
+		switch {
+		case c == '"':
+			// A doubled quote inside a quoted field toggles twice.
+			b.quoted = !b.quoted
+		case b.quoted:
+		case c == '\n':
+			b.commas = 0
+		case c == ',':
+			b.commas++
+		}
+		if b.commas == maxColumns {
+			b.err = errTooManyColumns
+			if i == 0 {
+				return 0, b.err
+			}
+			n, err = i, nil
+			break
+		}
+	}
 	b.left -= n
 	if n > 0 {
 		b.last = p[n-1]

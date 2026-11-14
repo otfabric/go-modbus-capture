@@ -332,7 +332,7 @@ func runRepair(e *env, _ *flag.FlagSet, args []string) error {
 		_, _ = fmt.Fprint(e.stdout, ", input was truncated")
 	}
 	if rep.Stopped != nil {
-		_, _ = fmt.Fprintf(e.stdout, ", stopped at: %v", rep.Stopped)
+		_, _ = fmt.Fprintf(e.stdout, ", stopped at: %s", printable(rep.Stopped.Error()))
 	}
 	if rep.End.Known {
 		_, _ = fmt.Fprintln(e.stdout, ", capture end kept")

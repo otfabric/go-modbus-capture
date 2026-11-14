@@ -8,7 +8,7 @@ import "github.com/otfabric/go-modbus-capture/edit"
 
 Package edit derives new captures from existing ones: Filter keeps a part, Trim cuts a time window and rebases it to 0, Split writes one capture per target, stream or function code, and Merge combines captures on their wall-clock starts. Every operation writes a new capture and records itself in the TagProvenance header tag. None of them changes a value, a PDU or the relative times of samples.
 
-Operations take an OpenFunc instead of a Writer, because the header of the result is only known once the operation has derived it.
+Operations take an OpenFunc instead of a Writer, because the header of the result is only known once the operation has derived it. An operation calls its open function on the calling goroutine and never closes the io.Writer behind the capture.Writer it gets. When an operation returns an error, the writers it opened are not closed: their output is incomplete and the caller discards it.
 
 ## Functions
 
@@ -19,6 +19,8 @@ func Split(src capture.Reader, by SplitBy, provenance string, open SplitOpenFunc
 ```
 
 Split writes every sample of src to the part its SplitKey names, opened on first use, with the definitions it needs. Each part keeps the header (plus provenance naming the part), the ids and the capture end of src. A target or stream without samples goes to no part. It returns the number of samples per part.
+
+Every part stays open until src ends, and the parts are closed then, in the order of their keys. A capture splits into at most 4096 parts: Split returns an error for the sample that would need one more, without opening it. On any error Split returns with the parts it opened still open (see the package comment).
 
 ### func SplitKey
 
@@ -47,7 +49,7 @@ type Input struct {
 }
 ```
 
-Input is one capture to merge, with the name recorded in TagSource.
+Input is one capture to merge, with the name recorded in TagSource. Capture must not be nil, and its header must be valid (capture.CheckHeader).
 
 ### type MergeMode
 
@@ -143,6 +145,8 @@ func Merge(inputs []Input, mode MergeMode, provenance string, open OpenFunc) (St
 ```
 
 Merge combines captures into one. Times are rebased on the earliest wall-clock start, exactly: the result's tick is the greatest common divisor of every tick size and start offset (in nanoseconds). Targets and streams are renumbered from 1 in input order. The header keeps the producer and tags that all inputs share, records the input names in TagSource, is change-only when every input is, and records exceptions when any input does. The end is the latest rebased end when every input has one, and unknown otherwise. Alignment between inputs is only as good as the clocks of the hosts that recorded them.
+
+Merge does not change its inputs. The samples it writes share their PDUs with the inputs: it copies neither, and the writer gets them as they are. An input without a capture, or with a header that capture.CheckHeader refuses, is an error wrapping capture.ErrCorrupt.
 
 #### func Trim
 

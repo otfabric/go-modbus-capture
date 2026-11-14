@@ -1,5 +1,49 @@
 # go-modbus-capture Releases
 
+## v0.2.2
+
+**Date:** 2026-11-14
+**Previous release:** v0.2.1
+
+### Fixed
+
+- **`mbcap` writer, time steps:** a sample 2^63 ticks or more from the one before it, in either direction, starts a new data block, so that every time delta fits its field and the file reads back.
+- **`mbcap` writer, long files:** the index is one block of at most 32 MiB, room for about 1.7 million data blocks. `WriteSample` returns an error wrapping `capture.ErrCorrupt` for the sample whose data block the index could not list. The sample is not written and the writer stays usable: `Close` completes the file, and a recorder continues in a new one. `mbcap.Repair` stops at such a sample and reports it in `RepairReport.Stopped`.
+- **`mbcap` reader:** a block of an unknown type between the index and the footer is skipped, and bytes after the body of an uncompressed data block are ignored, as docs/FORMAT.md section 2.1 says. A minor version above 2^31-1 is `ErrCorrupt`: `Reader.Version` returns it as an `int` on every platform.
+- **`jsonl` reader:** field names are matched exactly, as JSON names are. A field whose name differs from a defined one only in case is an unknown field and is ignored, as the specification says of unknown fields. A defined field that appears twice in a line, or twice in its `flags` or `serial` object, is `ErrCorrupt`.
+- **Every writer:** a `Close` that refuses its end, because the end is before a sample, leaves the writer open, and a `Close` with a valid end then completes the capture (`capture.Checker.End` marks the capture ended only for an end it accepts).
+- **`edit.Merge`:** an input without a capture, or with a header that `capture.CheckHeader` refuses, is an error wrapping `ErrCorrupt`.
+- **`mbcapctl`, encoding detection:** a long CSV file is recognised by its row of column names wherever the `t` column stands and however long the row is, as docs/FORMAT.md sections 4 and 7 say.
+- **Documents:** docs/FEATURE-STATUS.md and INTEROPERABILITY.md name the current releases, and the README says what a conversion keeps: the capture, not the bytes of a binary file.
+
+### Changed
+
+- **Samples per data block:** a binary data block holds at most 65 536 samples. The reader refuses a block that declares more, and the writer ends a block there whatever `Options.BlockSamples` asks for. A reader decodes one data block at a time, so this bounds what a block takes in memory, whatever its size in the file.
+- **Fields per CSV row:** a long CSV row holds at most 4 096 fields, the row of column names included.
+- **Parts of a split:** `edit.Split` and `mbcapctl split` write at most 4 096 parts and return an error for the sample that would need one more.
+- **Memory:** readers allocate for the bytes they have read, not for a length or count that the file declares. A binary block or compressed body of more than 64 KiB is read into a buffer that grows as the bytes arrive, the block count of an index is compared with the data blocks read before an entry is decoded, and a CSV row ends at its field limit before it is taken in. The binary reader allocates less per sample. A closed `mbcap.Writer` holds none of its buffers.
+- **`mbcapctl info` and `dump`** print the strings of a capture as text: a producer, tag, role, host or serial device with a control character, a line break or another character that is not printable is printed as a quoted Go string with escapes, as labels already were. Strings of printable characters print as before. Error messages of every command are printed on one line with the same escapes, and `info --json` writes such characters as `\u` escapes.
+- **`Reader.Header`** of every encoding returns a header with its own `Tags` map.
+- **Doc comments and documents** state what was true and unwritten: what a reader returns is the caller's, a writer copies what it keeps, no reader or writer is safe for concurrent use, the first error of the binary reader sticks while the text readers go on with the next line, a second `Close` is an error, and `edit` operations that fail leave the writers they opened to the caller. docs/FORMAT.md section 1 lists the new limits, LIMITATIONS.md has a section on memory, ERRORS.md says what state an error leaves, and TESTING.md has the lifecycle matrix.
+- **`make fuzz`** runs every fuzz target of every package, discovered with `go test -list`. The nightly workflow also runs the tests on linux/386.
+
+### Tests
+
+- `FuzzBlocks` (`mbcap`) frames its input into blocks with correct lengths and CRCs, so that fuzzing reaches the block decoders; `FuzzReader` (`jsonl`) compares what it reads with a reading from the defined fields alone; `FuzzRoundTrip` covers time steps of about 2^63 ticks.
+- Every limit of docs/FORMAT.md section 1 has a test at the limit and beyond it, and where a file declares a length or a count, a test that measures what the reader allocates for it.
+- Ownership tests for every encoding, and one test of the reader and writer contracts across the three encodings.
+
+### Compatibility
+
+No exported identifier changes. What this release reads differently from v0.2.1:
+
+- A binary file with more than 65 536 samples in one data block is refused. A writer of this library makes such blocks only with `Options.BlockSamples` and `Options.BlockBytes` both raised; `mbcapctl` does not, because its blocks end at 64 KiB.
+- In a JSON Lines file, a field in another case than the specification's is ignored, and a line with a defined field twice is refused. No writer of this library writes either.
+- A long CSV file with more than 4 096 columns is refused, and so is a split into more than 4 096 parts.
+- Now read: a file with a block of an unknown type between the index and the footer, a file with bytes after the body of an uncompressed data block, and a long CSV file whose `t` column is not among the first.
+
+---
+
 ## v0.2.1
 
 **Date:** 2026-11-08

@@ -33,7 +33,7 @@ Options for binary output, on every command that writes files:
 |---|---|---|
 | `--format` | from the extension | `mbcap`, `jsonl`, `csv` or `wide-csv` |
 | `--compression` | `deflate` | data block compression: `deflate` or `none` |
-| `--block-samples` | `256` | samples per data block |
+| `--block-samples` | `256` | samples per data block (at most 65 536; a larger number is taken as 65 536) |
 
 ## info
 
@@ -71,6 +71,12 @@ Streams:
 
 `--json` prints the same summary as JSON, for scripts and GUIs (times in ticks). A truncated file is
 summarised up to where it ends, and `info` says so.
+
+`info` and `dump` print the strings of a capture (producer, tags, labels, roles, hosts, serial devices) as
+text. Labels are always quoted. Any other string is printed as it is when all its characters are
+printable, and as a quoted Go string with escapes (`"a\x1b[2Jb\n"`) when it holds a control character, a
+line break or another character that is not printable. Error messages of every command are printed on one
+line with the same escapes, and `info --json` writes such characters as `\u` escapes.
 
 ## verify
 
@@ -161,6 +167,10 @@ mbcapctl split --by target|stream|fc [--dir DIR] [--format F] IN
 Writes one capture per target, per stream, or per function code, named after the input:
 `capture.target-1.mbcap`, `capture.stream-3.mbcap`, `capture.fc-03.mbcap`. Parts keep the input's ids,
 header and end; each holds only the definitions its samples need. Prints the files it wrote.
+
+Every part is an open file until the input ends, so a capture splits into at most 4 096 parts. With more
+targets or streams than that, `split` fails and writes nothing: `filter` a selection first, and split
+that.
 
 ```bash
 mbcapctl split --by stream --dir parts capture.mbcap

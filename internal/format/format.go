@@ -7,8 +7,10 @@ package format
 import (
 	"bufio"
 	"bytes"
+	"encoding/csv"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/otfabric/go-modbus-capture/capture"
@@ -70,21 +72,53 @@ func FromPath(path string) Format {
 	return Unknown
 }
 
-// Detect looks at the first bytes of br without consuming them.
+// Detect looks at the start of br without consuming it: the magic number of
+// the binary encoding, a leading "{" for JSON Lines, or a CSV row of column
+// names with a column t, wherever it stands in the row (docs/FORMAT.md
+// sections 4 and 7). It looks no further than the first row, and at most as
+// far as the buffer of br reaches; it waits for more input only while that
+// row is not complete.
 func Detect(br *bufio.Reader) Format {
 	head, _ := br.Peek(len(mbcap.Magic))
 	if string(head) == mbcap.Magic {
 		return Binary
 	}
-	head, _ = br.Peek(64)
-	head = bytes.TrimLeft(head, " \t\r\n")
-	switch {
-	case bytes.HasPrefix(head, []byte("{")):
-		return JSONL
-	case bytes.HasPrefix(head, []byte("t,")) || bytes.HasPrefix(head, []byte(`"t"`)) || bytes.Contains(head, []byte(",t,")):
-		return CSV
+	for n, seen := len(head), 0; ; n = len(head) + 1 {
+		_, err := br.Peek(min(n, br.Size()))
+		head, _ = br.Peek(br.Buffered()) // all that is there
+		if bytes.HasPrefix(bytes.TrimLeft(head, " \t\r\n"), []byte("{")) {
+			return JSONL
+		}
+		// A row ends with a line end: the row is parsed again only when
+		// one has arrived, or when no more input will be looked at.
+		last := err != nil || len(head) == br.Size()
+		arrived := head[seen:]
+		if seen = len(head); !last && bytes.IndexByte(arrived, '\n') < 0 {
+			continue
+		}
+		names, whole := columnNames(head)
+		switch {
+		case whole || err != nil:
+			// The whole row, or all the input holds of it.
+		case last:
+			// The row goes on beyond the buffer: its last name may be cut.
+			names = names[:max(len(names)-1, 0)]
+		default:
+			continue
+		}
+		if slices.Contains(names, "t") {
+			return CSV
+		}
+		return Unknown
 	}
-	return Unknown
+}
+
+// columnNames parses the first CSV row of head. whole is false when the row
+// may go on beyond head.
+func columnNames(head []byte) (names []string, whole bool) {
+	cr := csv.NewReader(bytes.NewReader(head))
+	names, err := cr.Read()
+	return names, err == nil && (cr.InputOffset() < int64(len(head)) || bytes.HasSuffix(head, []byte("\n")))
 }
 
 // Open detects the encoding of r and returns a reader for it.

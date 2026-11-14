@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"time"
 
 	"github.com/otfabric/go-modbus-capture/capture"
@@ -86,7 +87,178 @@ type endJSON struct {
 	At *uint64 `json:"at"`
 }
 
-// Writer writes a capture as JSON Lines.
+// fields names the fields of one JSON object of the format.
+type fields map[string]field
+
+// field is one field of an object: its number among the fields of the
+// object and, when its value is itself an object of the format, the fields
+// of that object.
+type field struct {
+	n     uint
+	inner fields
+}
+
+func names(ns ...string) fields {
+	f := fields{}
+	for i, n := range ns {
+		f[n] = field{n: uint(i)}
+	}
+	return f
+}
+
+func (f fields) with(name string, inner fields) fields {
+	f[name] = field{n: f[name].n, inner: inner}
+	return f
+}
+
+// The fields of each line type, as docs/FORMAT.md section 3 lists them.
+var (
+	typeField    = names("t")
+	headerFields = names("t", "version", "tick_ns", "wall_start", "producer", "tags", "flags").
+			with("flags", names("change_only", "exceptions"))
+	targetFields = names("t", "id", "label", "transport", "host", "port", "unit", "tags", "serial").
+			with("serial", names("device", "baud", "parity", "data_bits", "stop_bits"))
+	streamFields = names("t", "id", "target", "role", "label")
+	sampleFields = names("t", "s", "at", "req", "resp")
+	endFields    = names("t", "at")
+)
+
+// member is one name/value pair of a JSON object: the name without its
+// quotes and the value as it is written, both slices of the object's text
+// (a name written with escapes is a copy, with the escapes resolved).
+type member struct{ name, value []byte }
+
+// members appends the members of the JSON object data to ms, in order. data
+// must be valid JSON (json.Valid); ok is false when it is not an object.
+func members(ms []member, data []byte) (_ []member, ok bool) {
+	i := space(data, 0)
+	if data[i] != '{' {
+		return ms, false
+	}
+	for i = space(data, i+1); data[i] != '}'; {
+		end := i + stringLen(data[i:])
+		name := data[i+1 : end-1]
+		if bytes.IndexByte(name, '\\') >= 0 {
+			var s string
+			_ = json.Unmarshal(data[i:end], &s)
+			name = []byte(s)
+		}
+		i = space(data, space(data, end)+1) // past the colon
+		end = i + valueLen(data[i:])
+		ms = append(ms, member{name, data[i:end]})
+		if i = space(data, end); data[i] == ',' {
+			i = space(data, i+1)
+		}
+	}
+	return ms, true
+}
+
+// space returns the index of the first byte of b at or after i that is not
+// JSON white space.
+func space(b []byte, i int) int {
+	for i < len(b) && (b[i] == ' ' || b[i] == '\t' || b[i] == '\r' || b[i] == '\n') {
+		i++
+	}
+	return i
+}
+
+// stringLen returns the length of the JSON string at the start of b, quotes
+// included.
+func stringLen(b []byte) int {
+	for i := 1; ; i++ {
+		switch b[i] {
+		case '\\':
+			i++
+		case '"':
+			return i + 1
+		}
+	}
+}
+
+// valueLen returns the length of the JSON value at the start of b.
+func valueLen(b []byte) int {
+	switch b[0] {
+	case '"':
+		return stringLen(b)
+	case '{', '[':
+		for i, depth := 0, 0; ; i++ {
+			switch b[i] {
+			case '"':
+				i += stringLen(b[i:]) - 1
+			case '{', '[':
+				depth++
+			case '}', ']':
+				if depth--; depth == 0 {
+					return i + 1
+				}
+			}
+		}
+	}
+	// A number or a literal ends at white space or at what ends a member.
+	i := bytes.IndexAny(b, ",}] \t\r\n")
+	if i < 0 {
+		return len(b)
+	}
+	return i
+}
+
+// pick appends to dst a JSON object of the members that spec names. Names
+// are compared exactly: a member with any other name, such as a defined name
+// in another case, is an unknown field and left out (encoding/json alone
+// would take it for the defined field). A named member that appears twice is
+// an error.
+func pick(dst []byte, ms []member, spec fields) ([]byte, error) {
+	dst = append(dst, '{')
+	var seen uint
+	for _, m := range ms {
+		f, named := spec[string(m.name)]
+		if !named {
+			continue
+		}
+		if seen&(1<<f.n) != 0 {
+			return nil, fmt.Errorf("field %q appears twice", m.name)
+		}
+		if seen != 0 {
+			dst = append(dst, ',')
+		}
+		seen |= 1 << f.n
+		dst = append(dst, '"')
+		dst = append(dst, m.name...)
+		dst = append(dst, '"', ':')
+		sub, isObject := []member(nil), false
+		if f.inner != nil {
+			sub, isObject = members(nil, m.value)
+		}
+		if !isObject {
+			dst = append(dst, m.value...)
+			continue
+		}
+		var err error
+		if dst, err = pick(dst, sub, f.inner); err != nil {
+			return nil, err
+		}
+	}
+	return append(dst, '}'), nil
+}
+
+// exact returns line with only the fields that spec names (see pick). A line
+// that is not a JSON object is returned as it is, for json.Unmarshal to
+// refuse.
+func exact(line []byte, spec fields) ([]byte, error) {
+	if !json.Valid(line) {
+		return line, nil
+	}
+	ms, ok := members(nil, line)
+	if !ok {
+		return line, nil
+	}
+	return pick(nil, ms, spec)
+}
+
+// Writer writes a capture as JSON Lines. It keeps nothing of a record after
+// the call that wrote it. Close completes the capture once: a second Close
+// and a write after it return an error, and a Close that refuses its end
+// leaves the Writer open. A Writer is not safe for concurrent use.
 type Writer struct {
 	w      *bufio.Writer
 	ck     *capture.Checker
@@ -196,13 +368,22 @@ func (w *Writer) Close(end capture.End) error {
 	return w.w.Flush()
 }
 
-// Reader reads a capture from JSON Lines.
+// Reader reads a capture from JSON Lines. Field names are matched exactly, as
+// docs/FORMAT.md section 3 writes them; a field that appears twice in a line
+// is an error. The records Next returns are the caller's. An error of Next
+// for one line does not stick: the next call goes on with the line after it.
+// A Reader is not safe for concurrent use.
 type Reader struct {
 	br    *bufio.Reader
 	h     capture.Header
 	ck    *capture.Checker
 	n     int // number of the last line read
 	ended bool
+
+	// The members of the line being decoded and the object picked from
+	// them, kept from line to line.
+	ms  []member
+	buf []byte
 }
 
 // NewReader reads and checks the header line.
@@ -218,6 +399,9 @@ func NewReader(r io.Reader) (*Reader, error) {
 		}
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
+		}
+		if line, err = exact(line, headerFields); err != nil {
+			return nil, jr.corrupt("%v", err)
 		}
 		var hj headerJSON
 		if err := json.Unmarshal(line, &hj); err != nil || hj.T != typeHeader {
@@ -235,8 +419,13 @@ func NewReader(r io.Reader) (*Reader, error) {
 	}
 }
 
-// Header returns the capture header.
-func (r *Reader) Header() capture.Header { return r.h }
+// Header returns the capture header. The result is the caller's: its Tags
+// map is a copy.
+func (r *Reader) Header() capture.Header {
+	h := r.h
+	h.Tags = maps.Clone(h.Tags)
+	return h
+}
 
 // Next returns the next record, or io.EOF after the last one.
 func (r *Reader) Next() (capture.Record, error) {
@@ -251,6 +440,18 @@ func (r *Reader) Next() (capture.Record, error) {
 		var probe struct {
 			T string `json:"t"`
 		}
+		// A line that is not an object stays as it is, for json.Unmarshal
+		// to refuse.
+		r.ms = r.ms[:0]
+		if json.Valid(line) {
+			var isObject bool
+			if r.ms, isObject = members(r.ms, line); isObject {
+				if r.buf, err = pick(r.buf[:0], r.ms, typeField); err != nil {
+					return nil, r.corrupt("%v", err)
+				}
+				line = r.buf
+			}
+		}
 		if err := json.Unmarshal(line, &probe); err != nil {
 			return nil, r.corrupt("not a JSON object: %v", err)
 		}
@@ -262,7 +463,7 @@ func (r *Reader) Next() (capture.Record, error) {
 		if r.ended {
 			return nil, r.corrupt("%q line after the end line", probe.T)
 		}
-		rec, err := r.decode(probe.T, line)
+		rec, err := r.decode(probe.T)
 		if err != nil {
 			return nil, r.wrap(err)
 		}
@@ -270,13 +471,14 @@ func (r *Reader) Next() (capture.Record, error) {
 	}
 }
 
-func (r *Reader) decode(t string, line []byte) (capture.Record, error) {
+// decode decodes the line whose members are in r.ms as a line of type t.
+func (r *Reader) decode(t string) (capture.Record, error) {
 	switch t {
 	case typeHeader:
 		return nil, invalid("a second header line: combine captures with mbcapctl cat or merge")
 	case typeTarget:
 		var tj targetJSON
-		if err := json.Unmarshal(line, &tj); err != nil {
+		if err := r.unmarshal(targetFields, &tj); err != nil {
 			return nil, invalid("target: %v", err)
 		}
 		tg, err := decodeTarget(&tj)
@@ -286,7 +488,7 @@ func (r *Reader) decode(t string, line []byte) (capture.Record, error) {
 		return tg, r.ck.Target(tg)
 	case typeStream:
 		var sj streamJSON
-		if err := json.Unmarshal(line, &sj); err != nil {
+		if err := r.unmarshal(streamFields, &sj); err != nil {
 			return nil, invalid("stream: %v", err)
 		}
 		if sj.ID == nil || sj.Target == nil {
@@ -296,7 +498,7 @@ func (r *Reader) decode(t string, line []byte) (capture.Record, error) {
 		return s, r.ck.Stream(s)
 	case typeSample:
 		var sj sampleJSON
-		if err := json.Unmarshal(line, &sj); err != nil {
+		if err := r.unmarshal(sampleFields, &sj); err != nil {
 			return nil, invalid("sample: %v", err)
 		}
 		s, err := decodeSample(&sj)
@@ -306,7 +508,7 @@ func (r *Reader) decode(t string, line []byte) (capture.Record, error) {
 		return s, r.ck.Sample(s)
 	default: // typeEnd
 		var ej endJSON
-		if err := json.Unmarshal(line, &ej); err != nil {
+		if err := r.unmarshal(endFields, &ej); err != nil {
 			return nil, invalid("end: %v", err)
 		}
 		if ej.At == nil {
@@ -316,6 +518,15 @@ func (r *Reader) decode(t string, line []byte) (capture.Record, error) {
 		e := capture.End{Known: true, At: capture.Ticks(*ej.At)}
 		return e, r.ck.End(e)
 	}
+}
+
+// unmarshal decodes the fields of the line in r.ms that spec names into v.
+func (r *Reader) unmarshal(spec fields, v any) error {
+	var err error
+	if r.buf, err = pick(r.buf[:0], r.ms, spec); err != nil {
+		return err
+	}
+	return json.Unmarshal(r.buf, v)
 }
 
 // readLine returns the next line without its newline. A last line without a

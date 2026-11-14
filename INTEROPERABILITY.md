@@ -6,7 +6,7 @@ The format is tested by this repository's golden files, unit tests and fuzz targ
 
 | Program | Use | Evidence |
 |---|---|---|
-| go-modbus-trace v0.2.0 | writes MBCAP from a packet trace, using this module at v0.0.2 | its `TestReplayEndToEnd` checks the files with a pinned `mbcapctl verify` |
+| go-modbus-trace v0.8.7 | writes MBCAP from a packet trace, using this module at v0.2.1 | its `TestReplayEndToEnd` checks the files with a pinned `mbcapctl verify` |
 | modbusctl | serves a capture as a virtual device | same test, in go-modbus-trace |
 
 Files written now will not be readable by format 1.0 ([LIMITATIONS.md](LIMITATIONS.md)).

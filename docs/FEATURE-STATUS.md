@@ -1,6 +1,6 @@
 # Support and feature matrix
 
-What go-modbus-capture supports and how it is tested. Status: v0.0.2, format draft 0.1. Out of scope: [LIMITATIONS.md](../LIMITATIONS.md).
+What go-modbus-capture supports and how it is tested. Status: v0.2.2, format draft 0.1. Out of scope: [LIMITATIONS.md](../LIMITATIONS.md).
 
 None of this is a conformance claim: nothing is certified, and MBCAP is not a standard of any body.
 
@@ -8,7 +8,7 @@ None of this is a conformance claim: nothing is certified, and MBCAP is not a st
 
 | go-modbus-capture | Go | Format | Supported |
 |---|---|---|---|
-| **v0.1.0** | 1.26 or later (CI: 1.26 and 1.27) | draft 0.1 | **yes** |
+| **v0.2.2** | 1.26 or later (CI: 1.26 and 1.27) | draft 0.1 | **yes** |
 
 ## 2. Platforms
 

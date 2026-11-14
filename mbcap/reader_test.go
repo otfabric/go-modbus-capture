@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -262,5 +263,148 @@ func TestFlushIsReadable(t *testing.T) {
 	c, _, err := readAllBytes(buf.Bytes(), false)
 	if !errors.Is(err, capture.ErrTruncated) || len(c.Samples) != 3 {
 		t.Fatalf("after Flush: %d samples, err %v; want 3 and ErrTruncated (no index yet)", len(c.Samples), err)
+	}
+}
+
+// The minor version is returned as an int on every platform: a minor above
+// math.MaxInt32 is not a version this reader can report, so it is ErrCorrupt.
+func TestReaderMinorVersionRange(t *testing.T) {
+	for _, tc := range []struct {
+		minor uint64
+		ok    bool
+	}{
+		{0, true},
+		{capture.VersionMinor, true},
+		{math.MaxInt32 - 1, true},
+		{math.MaxInt32, true},
+		{math.MaxInt32 + 1, false},
+		{1 << 32, false},
+		{1 << 63, false},
+		{math.MaxUint64, false},
+	} {
+		var e enc
+		e.uvarint(capture.VersionMajor)
+		e.uvarint(tc.minor)
+		e.uvarint(1000)
+		e.uvarint(0)
+		e.uvarint(0)
+		e.str("")
+		e.uvarint(0)
+		r, err := NewReader(bytes.NewReader(frame([]byte(Magic), blockHeader, e.b)))
+		switch {
+		case tc.ok && err != nil:
+			t.Errorf("minor %d: %v", tc.minor, err)
+		case tc.ok:
+			if major, minor := r.Version(); major != capture.VersionMajor || uint64(minor) != tc.minor {
+				t.Errorf("minor %d: Version() = %d.%d", tc.minor, major, minor)
+			}
+		case !errors.Is(err, capture.ErrCorrupt):
+			t.Errorf("minor %d: err = %v, want ErrCorrupt", tc.minor, err)
+		}
+	}
+}
+
+// A time delta that takes a sample time below 0 or beyond 2^64-1 is an
+// error; one that reaches either end is not.
+func TestReaderTimeRange(t *testing.T) {
+	zigzag := func(v int64) []byte { return binary.AppendUvarint(nil, uint64(v<<1)^uint64(v>>63)) }
+	same := func(dt int64) []byte { return append([]byte{codingSame, 1, 1}, zigzag(dt)...) }
+	raw := sampleBytes([]byte{codingRaw, 1, 1, 0, 4}, []byte{0x03, 2, 0, 7})
+	for _, tc := range []struct {
+		name string
+		base uint64
+		dt   int64
+		at   uint64 // the time of the second sample, when it is in range
+		ok   bool
+	}{
+		{"back to 0", 5, -5, 0, true},
+		{"back below 0", 5, -6, 0, false},
+		{"the largest step back from 2^63", 1 << 63, math.MinInt64, 0, true},
+		{"the largest step back from below 2^63", 1<<63 - 1, math.MinInt64, 0, false},
+		{"forward to the last tick", 1<<64 - 6, 5, 1<<64 - 1, true},
+		{"forward beyond the last tick", 1<<64 - 6, 6, 0, false},
+		{"the largest step forward", 1 << 63, math.MaxInt64, 1<<64 - 1, true},
+		{"the largest step forward, one tick later", 1<<63 + 1, math.MaxInt64, 0, false},
+	} {
+		f := newFile(t)
+		f.template(1, []byte{0x03, 0, 0, 0, 1})
+		f.data(tc.base, 2, sampleBytes(raw, same(tc.dt)), min(tc.base, tc.at), max(tc.base, tc.at))
+		c, _, err := readAllBytes(f.close(1<<64-1), false)
+		switch {
+		case tc.ok && (err != nil || len(c.Samples) != 2 || uint64(c.Samples[1].At) != tc.at):
+			t.Errorf("%s: read %+v, err %v", tc.name, c.Samples, err)
+		case !tc.ok && (!errors.Is(err, capture.ErrCorrupt) || !strings.Contains(err.Error(), "time out of range")):
+			t.Errorf("%s: err = %v, want ErrCorrupt for the time", tc.name, err)
+		}
+	}
+}
+
+// insertBeforeFooter puts a block of type typ between the index and the
+// footer of a complete file.
+func insertBeforeFooter(b []byte, typ uint8, payload []byte) []byte {
+	body := bytes.Clone(b[:len(b)-FooterLen])
+	off := binary.BigEndian.Uint64(b[len(b)-FooterLen+2:])
+	body = frame(body, typ, payload)
+	return frame(body, blockFooter, append(binary.BigEndian.AppendUint64(nil, off), footerTag...))
+}
+
+// After the index only the footer may follow, but unknown block types are
+// still skipped there (FORMAT.md section 2.1); the known ones are an error.
+func TestReaderBlocksAfterIndex(t *testing.T) {
+	complete := func(t *testing.T) []byte {
+		f := newFile(t)
+		f.template(1, []byte{0x03, 0, 0, 0, 1})
+		f.data(0, 1, sampleBytes([]byte{codingRaw, 1, 1, 0, 4}, []byte{0x03, 2, 0, 7}), 0, 0)
+		return f.close(0)
+	}
+	for _, typ := range []uint8{0x05, 0x0F, 0x11, 0x1F, 0x22, 0x30, 0xFF} {
+		if c, _, err := readAllBytes(insertBeforeFooter(complete(t), typ, []byte{1, 2, 3}), false); err != nil || len(c.Samples) != 1 {
+			t.Errorf("unknown block type 0x%02x after the index: %d samples, err %v", typ, len(c.Samples), err)
+		}
+	}
+	for _, typ := range []uint8{blockHeader, blockTarget, blockStream, blockTemplate, blockData, blockIndex} {
+		_, _, err := readAllBytes(insertBeforeFooter(complete(t), typ, []byte{1, 2, 3}), false)
+		if !errors.Is(err, capture.ErrCorrupt) || !strings.Contains(err.Error(), "after the index") {
+			t.Errorf("block type 0x%02x after the index: err = %v, want ErrCorrupt", typ, err)
+		}
+	}
+}
+
+// Readers ignore trailing bytes in known blocks (FORMAT.md section 2.1): an
+// uncompressed data block with bytes after its declared body reads, as a
+// deflate block with bytes after its stream does.
+func TestReaderDataBlockTrailingBytes(t *testing.T) {
+	req := []byte{0x03, 0, 0, 0, 1}
+	var body enc
+	body.uvarint(0)
+	body.uvarint(1)
+	body.b = append(body.b, codingRaw, 1, 1, 0, 4, 0x03, 2, 0, 7)
+	for _, tc := range []struct {
+		name    string
+		payload func() []byte
+	}{
+		{"uncompressed", func() []byte {
+			var e enc
+			e.u8(codecNone)
+			e.uvarint(uint64(len(body.b)))
+			return append(append(e.b, body.b...), 0xAA, 0xBB)
+		}},
+		{"deflate", func() []byte {
+			var e enc
+			e.u8(codecDeflate)
+			e.uvarint(uint64(len(body.b)))
+			return append(append(e.b, deflateBytes(t, body.b)...), 0xAA, 0xBB)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFile(t)
+			f.template(1, req)
+			f.blocks = append(f.blocks, blockInfo{offset: uint64(len(f.b)), streams: []uint32{1}})
+			f.add(blockData, tc.payload())
+			c, _, err := readAllBytes(f.close(0), false)
+			if err != nil || len(c.Samples) != 1 || !bytes.Equal(c.Samples[0].Response, []byte{0x03, 2, 0, 7}) {
+				t.Fatalf("read %+v, err %v", c, err)
+			}
+		})
 	}
 }

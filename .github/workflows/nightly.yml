@@ -1,7 +1,8 @@
 # Extended tier (otfabric/engineering standards/testing.md#ci-tiers): long
-# fuzzing. This module holds no chaos or soak tier: it is offline code without
-# connections or timers. A fuzz failure leaves its input in the artifact:
-# commit it with the fix.
+# fuzzing of every fuzz target (make fuzz discovers them), and the tests on a
+# 32-bit architecture. This module holds no chaos or soak tier: it is offline
+# code without connections or timers. A fuzz failure leaves its input in the
+# artifact: commit it with the fix.
 name: Nightly
 run-name: "Nightly on ${{ github.ref_name }}"
 
@@ -35,3 +36,18 @@ jobs:
         with:
           name: fuzz-corpus-nightly
           path: "**/testdata/fuzz/"
+
+  # Platform width (otfabric/engineering standards/testing.md#platform-width):
+  # the binary codec converts lengths and counts of a file to int, so the
+  # tests also run where int has 32 bits. ubuntu runners execute 386 binaries;
+  # the race detector does not exist for 386.
+  test-386:
+    name: Tests on a 32-bit architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: GOARCH=386 go test -count=1 ./...

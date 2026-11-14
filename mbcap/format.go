@@ -16,6 +16,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 
 	"github.com/otfabric/go-modbus-capture/capture"
 )
@@ -77,6 +78,45 @@ const (
 	// MaxTemplates is the largest number of request templates.
 	MaxTemplates = capture.MaxRequests
 )
+
+// maxBlockSamples is the largest number of samples in one data block. A
+// reader decodes a data block as a whole, so this bounds what a block costs
+// in memory whatever its size on disk; a writer ends a block there.
+const maxBlockSamples = 1 << 16
+
+// maxIndexLen is the largest index block payload a writer produces:
+// MaxBlockLen, as for any block. A variable so that a test can lower it.
+var maxIndexLen = MaxBlockLen
+
+// readChunk is the most a reader allocates for a declared length before the
+// bytes are there: a block or a deflate body larger than this grows as it is
+// read, up to the declared length.
+const readChunk = 64 << 10
+
+// readN reads n bytes from r into a buffer that grows with what was read, so
+// that a declared length the input does not hold costs little. It returns the
+// bytes read; like io.ReadFull, the error is io.EOF when there were none and
+// io.ErrUnexpectedEOF when the input ended early.
+func readN(r io.Reader, n uint64) ([]byte, error) {
+	buf := make([]byte, 0, min(n, readChunk))
+	for {
+		m, err := io.ReadFull(r, buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+m]
+		if uint64(len(buf)) == n {
+			return buf, nil
+		}
+		if err != nil {
+			if err == io.EOF && len(buf) > 0 {
+				err = io.ErrUnexpectedEOF
+			}
+			return buf, err
+		}
+		// The buffer is full and more is declared: double it, never beyond n.
+		grown := make([]byte, len(buf), min(n, 2*uint64(len(buf))))
+		copy(grown, buf)
+		buf = grown
+	}
+}
 
 var castagnoli = crc32.MakeTable(crc32.Castagnoli)
 

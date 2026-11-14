@@ -33,13 +33,13 @@ GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
 # docsync release of docs-check (DOC-008).
 DOCSYNC_VERSION := v0.3.1
 
-# Fuzz targets and the time each gets in `make fuzz`.
 # Same minimum as coverage-min in ci.yml.
 COVER_MIN := 90
 # Per-package floor (TEST-012): what the weakest package measures now, rounded down.
 COVER_PKG_MIN := 90
+# The time each fuzz target gets in `make fuzz`. The targets are discovered,
+# never listed here.
 FUZZ_TIME ?= 30s
-FUZZ_TARGETS = ./mbcap:FuzzReader ./mbcap:FuzzRoundTrip ./jsonl:FuzzReader ./mbcsv:FuzzReader
 
 all: check build ## Run checks and build bin/mbcapctl
 
@@ -73,8 +73,11 @@ coverage: ## Write coverage.out (atomic mode)
 cover: coverage ## Open HTML coverage report
 	@go tool cover -html=coverage.out
 
-fuzz: ## Run every fuzz target for FUZZ_TIME
-	@for t in $(FUZZ_TARGETS); do \
+fuzz: ## Run every fuzz target of every package for FUZZ_TIME (discovered with go test -list)
+	@list=$$(go test -list '^Fuzz' ./...) || { echo "$$list"; exit 1; }; \
+	targets=$$(echo "$$list" | awk '/^Fuzz/ { names[n++] = $$1 } /^ok/ { for (i = 0; i < n; i++) print $$2 ":" names[i]; n = 0 }'); \
+	[ -n "$$targets" ] || { echo "no fuzz targets found"; exit 1; }; \
+	for t in $$targets; do \
 		pkg=$${t%%:*}; name=$${t#*:}; \
 		echo "Fuzzing $$name in $$pkg for $(FUZZ_TIME)"; \
 		go test -run '^$$' -fuzz "^$$name$$" -fuzztime $(FUZZ_TIME) $$pkg || exit 1; \

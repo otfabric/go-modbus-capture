@@ -69,7 +69,16 @@ Limits for hostile input, in readers and writers alike:
 | targets, streams | 65 536 each |
 | request templates; distinct (stream, request) pairs in a change-only capture | 1 048 576 |
 | binary block payload; uncompressed data block | 32 MiB; 16 MiB |
+| samples in a binary data block | 65 536 |
+| data blocks in a binary file | as many as the index block lists in its 32 MiB payload: about 1.7 million |
 | JSON Lines line; CSV row | 4 MiB |
+| fields in a CSV row (columns) | 4 096 |
+
+A reader decodes a binary data block as a whole, so the sample limit bounds what a block costs in memory
+whatever its size on disk: 65 536 samples, each with a request and a response of up to 253 bytes. A writer
+ends a data block at 65 536 samples at the latest. It returns an error for the sample that would need a
+data block its index has no room for; the file still closes with the samples written before, and a
+recorder continues in a new file.
 
 ## 2. Binary encoding
 
@@ -111,7 +120,7 @@ block*  type u8 | length varint | payload | crc32c u32
 
 **Header (0x01)**
 ```
-version_major varint | version_minor varint      (0.1)
+version_major varint | version_minor varint      (0.1; the minor version is at most 2^31-1)
 tick_ns       varint            (default 1000; 1..1e9)
 wall_start    varint            (Unix ns, UTC, at tick 0)
 flags         varint            bit0: change-only capture; bit1: exceptions recorded; other bits are an error
@@ -152,9 +161,11 @@ body = base_time varint | sample_count varint | sample*
 ```
 `base_time` is the absolute tick time that the first sample's `dt` is relative to (so a block is
 independently decodable and seekable); the writer uses the first sample's time, so its `dt` is 0.
-`sample_count` is at least 1. With deflate, the body is a raw DEFLATE stream (RFC 1951,
-`compress/flate`) of exactly `raw_len` bytes; the writer stores a block uncompressed when deflate does
-not make it smaller.
+`sample_count` is at least 1 and at most 65 536 (section 1). With deflate, the body is a raw DEFLATE
+stream (RFC 1951, `compress/flate`) of exactly `raw_len` bytes; the writer stores a block uncompressed
+when deflate does not make it smaller. Uncompressed, the body is the `raw_len` bytes after `raw_len`.
+Bytes of the payload after the body are trailing bytes of a known block, which a reader ignores
+(section 2.1).
 
 **Sample**
 ```
@@ -180,7 +191,9 @@ Rules:
 - A writer picks the smallest of RAW / SAME / DIFF per sample: SAME when the response equals the previous
   one, DIFF when it has the same length and the diff is smaller than RAW, RAW otherwise. DIFF is only valid
   when the previous response has the same length.
-- Times stay within 0..2^64-1; a `dt` that leaves that range is an error.
+- Times stay within 0..2^64-1; a `dt` that leaves that range is an error. A `dt` is a signed 64-bit
+  value. A writer starts a new data block for a sample 2^63 ticks or more from the one before it, in
+  either direction, so that the `base_time` of the new block takes the step.
 - `dt` may be negative (samples from concurrent streams can be written slightly out of order); the
   reader MUST NOT assume global monotonicity and MUST sort by `at` (stable) when building timelines.
 - Change-only captures (header flag bit0) omit samples whose response equals the previous one for the same
@@ -199,6 +212,12 @@ first and last sample: times may go back); stream ids are in increasing order. A
 the index against the data blocks it read and treats a mismatch as corruption (not after skipping a
 corrupt block). `mbcap.ReadIndex` reads it from the end of the file without reading the data.
 
+The index is a block like any other, so its payload is at most 32 MiB. An entry takes 5 bytes at least,
+about 20 for a block of one stream late in a long file, and at most 33 plus its stream ids: room for
+about 1.7 million data blocks. A writer counts the size of the index as it writes data blocks and returns
+an error for the sample whose data block the index could not list (section 1); what it has written
+still closes into a complete file.
+
 **Footer (0x21)** — fixed size so a reader can find it from the end of the file:
 ```
 type 0x21 | length 0x0C | index_offset u64 | tag "MBCE" (4 bytes) | crc32c u32     (18 bytes total)
@@ -216,7 +235,8 @@ file is readable up to there). zstd is optional and MUST live outside the stdlib
 ### 2.5 Block size
 
 The writer ends a Data block after 256 samples or once its uncompressed body reaches 64 KiB, whichever
-comes first (`mbcap.Options`; to be calibrated).
+comes first (`mbcap.Options`; to be calibrated). Whatever the options say, a block holds at most 65 536
+samples and 16 MiB of uncompressed body (section 1).
 Smaller blocks cost keyframe overhead, larger blocks cost seek granularity and recovery loss.
 
 ## 3. JSON Lines encoding (`.mbcap.jsonl`)
@@ -245,6 +265,11 @@ Rules:
 - Order: header, then definitions before first use, samples, finally `end`. A missing `end` line means the end
   is unknown. After `end` only lines of unknown types may follow.
 - Unknown line types and unknown fields MUST be ignored, so other tools may add their own annotations to lines.
+- Field names are case-sensitive, as JSON names are: the fields are exactly the names of the table above, in
+  lower case. A field with any other name is an unknown field, also when it differs from a defined name only in
+  case (`AT` is not `at`); the same holds for the value of `t` and for the fields of the `flags` and `serial`
+  objects. A defined field MUST NOT appear twice in a line, or twice in its `flags` or `serial` object: a reader
+  returns an error for such a line. Unknown fields may repeat.
 - Exactly one `header` line. A reader that meets a second `header` line MUST return an error rather than silently
   mixing two captures; combining files is done with `mbcapctl cat`/`merge`, which rebases times and renumbers ids.
 - JSON Lines is the canonical text encoding. Long CSV (section 4) carries the same records in tabular form for
@@ -309,7 +334,8 @@ Rules:
   holds no carriage return (section 1): RFC 4180 readers turn CR LF inside a quoted field into LF.
 - Every row has as many fields as the column row. Readers accept `\r\n` line ends.
 - The input ends with a line end; a last row without one, or input that ends inside a quoted field, is
-  `ErrTruncated`. Readers cap rows at 4 MiB.
+  `ErrTruncated`. Readers cap rows at 4 MiB and at 4 096 fields, the row of column names included: the 25
+  columns of the format leave room for the columns other tools add.
 
 Example: records of the JSON Lines example of section 3 (two of its four samples; the whole capture is
 `testdata/example.mbcap.csv`):
@@ -353,4 +379,5 @@ Replayers build the rest themselves (see `docs/HANDOFF-MODBUSCTL.md`).
 - Header carries `version_major.version_minor`. Draft 0 corresponds to nothing frozen; the first frozen
   release is 1.0. Readers accept the same major and any minor; unknown major is an error.
 - JSON Lines and long CSV `version` mirror the binary header version ("0.1" for the draft).
-- Readers detect the encoding from the content: the magic number, a leading `{`, or CSV column names.
+- Readers detect the encoding from the content: the magic number, a leading `{`, or CSV column names (a first
+  row with a `t` column, in any position).
